@@ -8,6 +8,8 @@ import 'reports.dart';
 import '../models/user_store.dart';
 import '../shared/total_users_card.dart';
 import '../shared/pending_approvals_card.dart';
+import '../shared/ratings_reviews_card.dart';
+import '../shared/ratings_reviews_modal.dart';
 import '../services/scan_requests_service.dart';
 import 'package:provider/provider.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -366,6 +368,24 @@ class _AdminDashboardState extends State<AdminDashboard>
     }
   }
 
+  void _showRatingsReviewsModal(BuildContext context) {
+    showDialog(
+      context: context,
+      builder:
+          (context) => Dialog(
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: Container(
+              width: MediaQuery.of(context).size.width * 0.9,
+              height: MediaQuery.of(context).size.height * 0.85,
+              padding: const EdgeInsets.all(24),
+              child: const RatingsReviewsModalContent(),
+            ),
+          ),
+    );
+  }
+
   Widget _buildDashboard() {
     // Dashboard always shows current month - no need to check for time range changes
 
@@ -418,80 +438,114 @@ class _AdminDashboardState extends State<AdminDashboard>
             Center(
               child: Container(
                 constraints: const BoxConstraints(maxWidth: 1200),
-                child: GridView.count(
-                  shrinkWrap: true,
-                  physics: const NeverScrollableScrollPhysics(),
-                  crossAxisCount: 3,
-                  crossAxisSpacing: 24,
-                  mainAxisSpacing: 24,
-                  childAspectRatio: 1.4,
-                  children: [
-                    TotalUsersCard(
-                      onTap: () {
-                        setState(() {
-                          _selectedIndex = 1; // Switch to users tab
-                        });
-                      },
-                    ),
-                    const PendingApprovalsCard(),
-                    // Replace TotalReportsCard with TotalReportsReviewedCard
-                    TotalReportsReviewedCard(
-                      totalReports: _stats['totalReportsReviewed'],
-                      reportsTrend: _reportsTrend,
-                      onTap: () {
-                        showDialog(
-                          context: context,
-                          builder: (context) {
-                            final ValueNotifier<bool> fullscreen =
-                                ValueNotifier<bool>(false);
-                            return ValueListenableBuilder<bool>(
-                              valueListenable: fullscreen,
-                              builder:
-                                  (context, isFull, _) => Dialog(
-                                    insetPadding:
-                                        isFull
-                                            ? EdgeInsets.zero
-                                            : const EdgeInsets.symmetric(
-                                              horizontal: 40,
-                                              vertical: 40,
-                                            ),
-                                    shape: RoundedRectangleBorder(
-                                      borderRadius:
-                                          isFull
-                                              ? BorderRadius.zero
-                                              : BorderRadius.circular(16),
-                                    ),
-                                    child: Container(
-                                      width:
-                                          isFull
-                                              ? MediaQuery.of(
-                                                context,
-                                              ).size.width
-                                              : MediaQuery.of(
+                child: LayoutBuilder(
+                  builder: (context, constraints) {
+                    // Responsive grid: adjust columns based on available width
+                    int crossAxisCount;
+                    double childAspectRatio;
+                    final screenHeight = MediaQuery.of(context).size.height;
+
+                    // For smaller screens (like 18" monitors ~1366x768), use fewer columns and taller cards
+                    if (constraints.maxWidth > 1200 && screenHeight > 900) {
+                      crossAxisCount = 4;
+                      childAspectRatio = 1.7;
+                    } else if (constraints.maxWidth > 900) {
+                      // For 18" monitors and similar small screens
+                      crossAxisCount = screenHeight < 800 ? 3 : 4;
+                      childAspectRatio =
+                          1.8; // Taller cards to prevent overflow
+                    } else if (constraints.maxWidth > 700) {
+                      crossAxisCount = 3;
+                      childAspectRatio = 1.7;
+                    } else if (constraints.maxWidth > 500) {
+                      crossAxisCount = 2;
+                      childAspectRatio = 1.6;
+                    } else {
+                      crossAxisCount = 1;
+                      childAspectRatio = 1.5;
+                    }
+
+                    return GridView.count(
+                      shrinkWrap: true,
+                      physics: const NeverScrollableScrollPhysics(),
+                      crossAxisCount: crossAxisCount,
+                      crossAxisSpacing: 12,
+                      mainAxisSpacing: 12,
+                      childAspectRatio: childAspectRatio,
+                      children: [
+                        TotalUsersCard(
+                          onTap: () {
+                            setState(() {
+                              _selectedIndex = 1; // Switch to users tab
+                            });
+                          },
+                        ),
+                        const PendingApprovalsCard(),
+                        // Replace TotalReportsCard with TotalReportsReviewedCard
+                        TotalReportsReviewedCard(
+                          totalReports: _stats['totalReportsReviewed'],
+                          reportsTrend: _reportsTrend,
+                          onTap: () {
+                            showDialog(
+                              context: context,
+                              builder: (context) {
+                                final ValueNotifier<bool> fullscreen =
+                                    ValueNotifier<bool>(false);
+                                return ValueListenableBuilder<bool>(
+                                  valueListenable: fullscreen,
+                                  builder:
+                                      (context, isFull, _) => Dialog(
+                                        insetPadding:
+                                            isFull
+                                                ? EdgeInsets.zero
+                                                : const EdgeInsets.symmetric(
+                                                  horizontal: 40,
+                                                  vertical: 40,
+                                                ),
+                                        shape: RoundedRectangleBorder(
+                                          borderRadius:
+                                              isFull
+                                                  ? BorderRadius.zero
+                                                  : BorderRadius.circular(16),
+                                        ),
+                                        child: Container(
+                                          width:
+                                              isFull
+                                                  ? MediaQuery.of(
                                                     context,
-                                                  ).size.width *
-                                                  0.9,
-                                      height:
-                                          isFull
-                                              ? MediaQuery.of(
-                                                context,
-                                              ).size.height
-                                              : MediaQuery.of(
+                                                  ).size.width
+                                                  : MediaQuery.of(
+                                                        context,
+                                                      ).size.width *
+                                                      0.9,
+                                          height:
+                                              isFull
+                                                  ? MediaQuery.of(
                                                     context,
-                                                  ).size.height *
-                                                  0.8,
-                                      padding: const EdgeInsets.all(20),
-                                      child: ReportsModalContent(
-                                        fullscreenNotifier: fullscreen,
+                                                  ).size.height
+                                                  : MediaQuery.of(
+                                                        context,
+                                                      ).size.height *
+                                                      0.8,
+                                          padding: const EdgeInsets.all(20),
+                                          child: ReportsModalContent(
+                                            fullscreenNotifier: fullscreen,
+                                          ),
+                                        ),
                                       ),
-                                    ),
-                                  ),
+                                );
+                              },
                             );
                           },
-                        );
-                      },
-                    ),
-                  ],
+                        ),
+                        RatingsReviewsCard(
+                          onTap: () {
+                            _showRatingsReviewsModal(context);
+                          },
+                        ),
+                      ],
+                    );
+                  },
                 ),
               ),
             ),

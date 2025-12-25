@@ -14,11 +14,19 @@ class ReportPdfService {
     String pageSize = 'A4',
     String? backgroundAsset,
     required String preparedBy,
+    String selectedCity = 'All',
   }) async {
     // Fetch data needed for the report
     // Get all requests
-    final List<Map<String, dynamic>> allRequests =
-        await ScanRequestsService.getScanRequests();
+    var allRequests = await ScanRequestsService.getScanRequests();
+    
+    // Filter by city if not 'All'
+    if (selectedCity != 'All') {
+      allRequests = allRequests.where((request) {
+        final city = (request['cityMunicipality'] ?? '').toString().trim();
+        return city.toLowerCase() == selectedCity.toLowerCase();
+      }).toList();
+    }
 
     // Determine reporting period for filtering by createdAt (when disease occurred)
     DateTime startDate;
@@ -119,9 +127,8 @@ class ReportPdfService {
       if (inWindow) filteredCreatedCompleted.add(r);
     }
 
-    // Build disease stats from validated data
+    // Build disease stats from validated data - count reports, not boxes
     final Map<String, int> diseaseCounts = {};
-    int totalDetections = 0;
     for (final r in filteredCreatedCompleted) {
       List<dynamic> diseaseSummary = [];
       if (r['diseaseSummary'] != null) {
@@ -133,19 +140,35 @@ class ReportPdfService {
       } else if (r['results'] != null) {
         diseaseSummary = r['results'] as List<dynamic>? ?? [];
       }
-      for (final d in diseaseSummary) {
-        String name = 'Unknown';
-        int count = 1;
-        if (d is Map<String, dynamic>) {
-          name = d['name'] ?? d['label'] ?? d['disease'] ?? 'Unknown';
-          count = d['count'] ?? d['confidence'] ?? 1;
-        } else if (d is String) {
-          name = d;
+
+      // Collect unique disease types in this report (each report counts as 1 per disease type)
+      final Set<String> diseasesInReport = {};
+
+      if (diseaseSummary.isEmpty) {
+        // If no diseases, count as healthy
+        diseasesInReport.add('Healthy');
+      } else {
+        for (final d in diseaseSummary) {
+          String name = 'Unknown';
+          if (d is Map<String, dynamic>) {
+            name = d['name'] ?? d['label'] ?? d['disease'] ?? 'Unknown';
+          } else if (d is String) {
+            name = d;
+          }
+
+          if (name.isEmpty || name == 'Unknown') continue;
+
+          final lower = name.toLowerCase();
+          if (lower.contains('tip burn') || lower.contains('unknown')) continue;
+
+          // Add disease type to set (each report contributes 1 per disease type)
+          diseasesInReport.add(name);
         }
-        final lower = name.toLowerCase();
-        if (lower.contains('tip burn') || lower.contains('unknown')) continue;
-        diseaseCounts[name] = (diseaseCounts[name] ?? 0) + count;
-        totalDetections += count;
+      }
+
+      // Count each disease type once per report
+      for (final diseaseName in diseasesInReport) {
+        diseaseCounts[diseaseName] = (diseaseCounts[diseaseName] ?? 0) + 1;
       }
     }
     final List<Map<String, dynamic>> diseaseStats = [];
@@ -196,15 +219,21 @@ class ReportPdfService {
       // Compare the two halves
       final delta = secondHalfAvg - firstHalfAvg;
 
-      // Threshold: if difference is more than 1 detection on average
-      const double eps = 1.0;
+      // Threshold: if difference is more than 0.1 reports on average (since we're counting reports now)
+      const double eps = 0.1;
       if (delta > eps) return 'Increasing';
       if (delta < -eps) return 'Decreasing';
       return 'Stable';
     }
 
+    // Calculate total disease occurrences (sum of all disease counts)
+    // Since a report can have multiple diseases, the sum can be > totalReports
+    final int totalDiseaseOccurrences = diseaseCounts.values.fold(0, (sum, count) => sum + count);
+    
     diseaseCounts.forEach((name, count) {
-      final pct = totalDetections > 0 ? count / totalDetections : 0.0;
+      // Percentage is based on total disease occurrences, not total reports
+      // This gives the proportion of each disease among all disease occurrences
+      final pct = totalDiseaseOccurrences > 0 ? count / totalDiseaseOccurrences : 0.0;
       diseaseStats.add({
         'name': name,
         'count': count,
@@ -253,29 +282,46 @@ class ReportPdfService {
         diseaseSummary = r['results'] as List<dynamic>? ?? [];
       }
 
-      if (diseaseSummary.isNotEmpty) {
+      // Collect unique disease types in this report (each report counts as 1 per disease type per day)
+      final Set<String> diseasesInReport = {};
+      bool hasHealthy = false;
+
+      if (diseaseSummary.isEmpty) {
+        // If no diseases, count as healthy
+        hasHealthy = true;
+      } else {
         for (final d in diseaseSummary) {
           String name = 'Unknown';
-          int count = 1;
           if (d is Map<String, dynamic>) {
             name = d['name'] ?? d['label'] ?? d['disease'] ?? 'Unknown';
-            count = d['count'] ?? d['confidence'] ?? 1;
           } else if (d is String) {
             name = d;
           }
+
+          if (name.isEmpty || name == 'Unknown') continue;
+
           final lower = name.toLowerCase();
-          if (lower.contains('tip burn') || lower.contains('unknown')) {
+          if (lower.contains('tip burn') || lower.contains('unknown')) continue;
+
+          if (lower == 'healthy') {
+            hasHealthy = true;
             continue;
           }
-          if (lower == 'healthy') {
-            healthyByDay[key] = (healthyByDay[key] ?? 0) + count;
-          } else {
-            diseaseByDay[key] = (diseaseByDay[key] ?? 0) + count;
-            final perDay = diseaseDayCounts[lower] ?? <String, int>{};
-            perDay[key] = (perDay[key] ?? 0) + count;
-            diseaseDayCounts[lower] = perDay;
-          }
+
+          // Add disease type to set (each report contributes 1 per disease type)
+          diseasesInReport.add(lower);
         }
+      }
+
+      // Count each disease type once per report for this day
+      if (hasHealthy) {
+        healthyByDay[key] = (healthyByDay[key] ?? 0) + 1;
+      }
+      for (final diseaseName in diseasesInReport) {
+        diseaseByDay[key] = (diseaseByDay[key] ?? 0) + 1;
+        final perDay = diseaseDayCounts[diseaseName] ?? <String, int>{};
+        perDay[key] = (perDay[key] ?? 0) + 1;
+        diseaseDayCounts[diseaseName] = perDay;
       }
     }
     // Build aligned label set (dates) and ordered series arrays
@@ -449,7 +495,9 @@ class ReportPdfService {
               pw.Divider(thickness: 0.7),
               _labeledRow(
                 'Location:',
-                'Barangay Cebulano, Carmen, Davao del Norte',
+                selectedCity != 'All'
+                    ? '$selectedCity, Davao del Norte'
+                    : 'Barangay Cebulano, Carmen, Davao del Norte',
                 baseBody * scale,
                 font: baseFont,
                 boldFont: boldFont,

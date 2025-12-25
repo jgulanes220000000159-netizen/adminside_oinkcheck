@@ -25,6 +25,9 @@ dependencies:
   syncfusion_flutter_datepicker: ^28.1.38
   shared_preferences: ^2.2.2
   url_launcher: ^6.3.1
+  flutter_map: ^7.0.2
+  flutter_map_cancellable_tile_provider: ^3.0.2
+  latlong2: ^0.9.1
 
 dev_dependencies:
   flutter_test:
@@ -39,3 +42,4 @@ flutter:
     - assets/logo.png
     - assets/bgg.png
     - assets/report_template_bg.jpg
+    - assets/farmer.png

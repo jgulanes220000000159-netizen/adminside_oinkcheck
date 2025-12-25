@@ -57,6 +57,9 @@ class ScanRequestsService {
           'images': data['images'] ?? [],
           'diseaseSummary': data['diseaseSummary'] ?? [],
           'expertReview': data['expertReview'],
+          'cityMunicipality': data['cityMunicipality'] ?? '',
+          'province': data['province'] ?? '',
+          'barangay': data['barangay'] ?? '',
         };
       }).toList();
     } catch (e) {
@@ -174,9 +177,9 @@ class ScanRequestsService {
       //   debug prints removed
       // }
 
-      // Aggregate disease data
+      // Aggregate disease data - count reports, not boxes
       final Map<String, int> diseaseCounts = {};
-      int totalDetections = 0;
+      int totalReports = 0;
 
       for (final request in filteredRequests) {
         // Try different possible field names for disease data
@@ -192,55 +195,54 @@ class ScanRequestsService {
           diseaseSummary = request['results'] as List<dynamic>? ?? [];
         }
 
-        // debugPrint(
-        //   'Processing request ${request['id']} with ${diseaseSummary.length} diseases',
-        // );
-        // debugPrint(
-        //   'Disease summary data: $diseaseSummary',
-        // ); // Debug: Print disease summary
+        // Collect unique disease types in this report (each report counts as 1 per disease type)
+        final Set<String> diseasesInReport = {};
 
-        for (final disease in diseaseSummary) {
-          // debugPrint(
-          //   'Processing disease: $disease',
-          // ); // Debug: Print each disease
+        if (diseaseSummary.isEmpty) {
+          // If no diseases, count as healthy
+          diseasesInReport.add('Healthy');
+        } else {
+          for (final disease in diseaseSummary) {
+            String diseaseName = 'Unknown';
 
-          // Try different possible field names for disease name and count
-          String diseaseName = 'Unknown';
-          int count = 1; // Default to 1 if no count specified
+            if (disease is Map<String, dynamic>) {
+              diseaseName =
+                  disease['name'] ??
+                  disease['label'] ??
+                  disease['disease'] ??
+                  'Unknown';
+            } else if (disease is String) {
+              diseaseName = disease;
+            }
 
-          if (disease is Map<String, dynamic>) {
-            diseaseName =
-                disease['name'] ??
-                disease['label'] ??
-                disease['disease'] ??
-                'Unknown';
-            count = disease['count'] ?? disease['confidence'] ?? 1;
-          } else if (disease is String) {
-            diseaseName = disease;
-            count = 1;
+            if (diseaseName.isEmpty || diseaseName == 'Unknown') continue;
+
+            // Skip Tip Burn as it's not a disease but a scanning feature
+            final lowerName = diseaseName.toLowerCase();
+            if (lowerName.contains('tip burn') ||
+                lowerName.contains('unknown')) {
+              continue;
+            }
+
+            // Add disease type to set (each report contributes 1 per disease type)
+            diseasesInReport.add(diseaseName);
           }
-
-          // Skip Tip Burn as it's not a disease but a scanning feature
-          if (diseaseName.toLowerCase().contains('tip burn') ||
-              diseaseName.toLowerCase().contains('unknown')) {
-            // debugPrint('Skipping Tip Burn/Unknown: $diseaseName');
-            continue;
-          }
-
-          diseaseCounts[diseaseName] =
-              (diseaseCounts[diseaseName] ?? 0) + count;
-          totalDetections += count;
         }
-      }
 
-      // debugPrint('Disease counts: $diseaseCounts');
-      // debugPrint('Total detections: $totalDetections');
+        // Count each disease type once per report
+        for (final diseaseName in diseasesInReport) {
+          diseaseCounts[diseaseName] = (diseaseCounts[diseaseName] ?? 0) + 1;
+        }
+
+        // Total reports is the number of reports processed
+        totalReports++;
+      }
 
       // Convert to list format with percentages
       final List<Map<String, dynamic>> diseaseStats = [];
 
       diseaseCounts.forEach((diseaseName, count) {
-        final percentage = totalDetections > 0 ? count / totalDetections : 0.0;
+        final percentage = totalReports > 0 ? count / totalReports : 0.0;
         diseaseStats.add({
           'name': diseaseName,
           'count': count,

@@ -17,6 +17,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import '../shared/total_users_card.dart' show resolveStorageImageUrl;
+import 'disease_map_widget.dart';
 
 // picker moved to lib/shared/date_range_picker.dart
 
@@ -30,6 +31,7 @@ class Reports extends StatefulWidget {
 
 class _ReportsState extends State<Reports> {
   String _selectedTimeRange = 'Last 7 Days';
+  String _selectedCity = 'All'; // City filter for reports page
   bool _isLoading = true;
   Future<List<Map<String, dynamic>>>?
   _scanRequestsFuture; // cached shared future
@@ -258,6 +260,154 @@ class _ReportsState extends State<Reports> {
     }
   }
 
+  // Get available cities from scan requests
+  Future<List<String>> _getAvailableCities() async {
+    try {
+      final scanRequests = await ScanRequestsService.getScanRequests();
+      final cities = <String>{};
+      for (final request in scanRequests) {
+        final city = (request['cityMunicipality'] ?? '').toString().trim();
+        if (city.isNotEmpty) {
+          cities.add(city);
+        }
+      }
+      final sortedCities = cities.toList()..sort();
+      return ['All', ...sortedCities];
+    } catch (e) {
+      return ['All'];
+    }
+  }
+
+  // Get reports trend for a specific city and time range
+  Future<List<Map<String, dynamic>>> _getReportsTrendForCity(
+    List<Map<String, dynamic>> cityFiltered,
+    String timeRange,
+  ) async {
+    // Use the same logic as ScanRequestsService.getReportsTrend but with pre-filtered data
+    final filtered = ScanRequestsService.filterByTimeRange(
+      cityFiltered,
+      timeRange,
+    );
+    // Group by date
+    final Map<String, int> dateCounts = {};
+    for (final r in filtered) {
+      if ((r['status'] ?? '') != 'completed') continue;
+      final createdAt = r['createdAt'];
+      if (createdAt == null) continue;
+      DateTime? created;
+      if (createdAt is Timestamp) created = createdAt.toDate();
+      if (createdAt is String) created = DateTime.tryParse(createdAt);
+      if (created == null) continue;
+      final dateKey =
+          '${created.year}-${created.month.toString().padLeft(2, '0')}-${created.day.toString().padLeft(2, '0')}';
+      dateCounts[dateKey] = (dateCounts[dateKey] ?? 0) + 1;
+    }
+    final result =
+        dateCounts.entries
+            .map((e) => {'date': e.key, 'count': e.value})
+            .toList();
+    result.sort((a, b) => a['date'].toString().compareTo(b['date'].toString()));
+    return result;
+  }
+
+  // Get disease stats for a specific city and time range
+  Future<List<Map<String, dynamic>>> _getDiseaseStatsForCity(
+    List<Map<String, dynamic>> cityFiltered,
+    String timeRange,
+  ) async {
+    // Use the same logic as ScanRequestsService.getDiseaseStats but with pre-filtered data
+    final filtered = ScanRequestsService.filterByTimeRange(
+      cityFiltered,
+      timeRange,
+    );
+    // Only include completed scans
+    final completed =
+        filtered.where((r) => (r['status'] ?? '') == 'completed').toList();
+
+    // Aggregate disease data
+    final Map<String, int> diseaseCounts = {};
+
+    for (final request in completed) {
+      List<dynamic> diseaseSummary = [];
+      if (request['diseaseSummary'] != null) {
+        diseaseSummary = request['diseaseSummary'] as List<dynamic>? ?? [];
+      } else if (request['diseases'] != null) {
+        diseaseSummary = request['diseases'] as List<dynamic>? ?? [];
+      } else if (request['detections'] != null) {
+        diseaseSummary = request['detections'] as List<dynamic>? ?? [];
+      } else if (request['results'] != null) {
+        diseaseSummary = request['results'] as List<dynamic>? ?? [];
+      }
+
+      // Collect unique disease types in this report (each report counts as 1 per disease type)
+      final Set<String> diseasesInReport = {};
+
+      if (diseaseSummary.isEmpty) {
+        // If no diseases, count as healthy
+        diseasesInReport.add('Healthy');
+      } else {
+        for (final disease in diseaseSummary) {
+          String diseaseName = '';
+          if (disease is Map<String, dynamic>) {
+            diseaseName =
+                (disease['name'] ??
+                        disease['label'] ??
+                        disease['disease'] ??
+                        '')
+                    .toString()
+                    .trim();
+          } else if (disease is String) {
+            diseaseName = disease;
+          }
+
+          if (diseaseName.isEmpty) continue;
+
+          final lowerName = diseaseName.toLowerCase();
+          if (lowerName.contains('tip burn') || lowerName.contains('unknown')) {
+            continue;
+          }
+
+          // Add disease type to set (each report contributes 1 per disease type)
+          diseasesInReport.add(diseaseName);
+        }
+      }
+
+      // Count each disease type once per report
+      for (final diseaseName in diseasesInReport) {
+        diseaseCounts[diseaseName] = (diseaseCounts[diseaseName] ?? 0) + 1;
+      }
+    }
+
+    // Convert to list format with percentages
+    // Calculate total disease occurrences (sum of all disease counts)
+    // Since a report can have multiple diseases, the sum can be > totalReports
+    final int totalDiseaseOccurrences = diseaseCounts.values.fold(
+      0,
+      (sum, count) => sum + count,
+    );
+
+    final List<Map<String, dynamic>> diseaseStats = [];
+    diseaseCounts.forEach((diseaseName, count) {
+      // Percentage is based on total disease occurrences, not total reports
+      // This gives the proportion of each disease among all disease occurrences
+      final percentage =
+          totalDiseaseOccurrences > 0 ? count / totalDiseaseOccurrences : 0.0;
+      diseaseStats.add({
+        'name': diseaseName,
+        'count': count,
+        'percentage': percentage,
+        'type': diseaseName.toLowerCase() == 'healthy' ? 'healthy' : 'disease',
+      });
+    });
+
+    // Sort by count (descending)
+    diseaseStats.sort(
+      (a, b) => (b['count'] as int).compareTo(a['count'] as int),
+    );
+
+    return diseaseStats;
+  }
+
   bool _hasInitialized = false;
 
   @override
@@ -281,10 +431,44 @@ class _ReportsState extends State<Reports> {
       // Note: In fallback mode, we don't have real-time reviewsCompleted count
       // so completion rate will be approximate
       try {
-        final counts = await ScanRequestsService.getCountsForTimeRange(
-          timeRange: _selectedTimeRange,
+        // Get all scan requests and filter by city first
+        final all = await ScanRequestsService.getScanRequests();
+        var cityFiltered = all;
+        if (_selectedCity != 'All') {
+          cityFiltered =
+              all.where((request) {
+                final city =
+                    (request['cityMunicipality'] ?? '').toString().trim();
+                return city.toLowerCase() == _selectedCity.toLowerCase();
+              }).toList();
+        }
+        // Then filter by time range and calculate counts
+        final filtered = ScanRequestsService.filterByTimeRange(
+          cityFiltered,
+          _selectedTimeRange,
         );
-        final int overduePendingCreated = counts['overduePending'] ?? 0;
+        // Calculate counts manually
+        int overduePending = 0;
+        final now = DateTime.now();
+        for (final r in filtered) {
+          final status = (r['status'] ?? '').toString();
+          if (status == 'pending') {
+            final createdAt = r['createdAt'];
+            DateTime? created;
+            if (createdAt is Timestamp) {
+              created = createdAt.toDate();
+            } else if (createdAt is String) {
+              created = DateTime.tryParse(createdAt);
+            }
+            if (created != null) {
+              final hoursSinceCreated = now.difference(created).inHours;
+              if (hoursSinceCreated > 24) {
+                overduePending++;
+              }
+            }
+          }
+        }
+        final int overduePendingCreated = overduePending;
 
         setState(() {
           _completionRate = '—'; // Unable to calculate without reviewedAt data
@@ -293,7 +477,7 @@ class _ReportsState extends State<Reports> {
       } catch (_) {}
       return;
     }
-    final scanRequests =
+    var scanRequests =
         snapshot.docs.map((doc) {
           final data = doc.data() as Map<String, dynamic>;
           return {
@@ -306,8 +490,20 @@ class _ReportsState extends State<Reports> {
             'images': data['images'] ?? [],
             'diseaseSummary': data['diseaseSummary'] ?? [],
             'expertReview': data['expertReview'],
+            'cityMunicipality': data['cityMunicipality'] ?? '',
+            'province': data['province'] ?? '',
+            'barangay': data['barangay'] ?? '',
           };
         }).toList();
+
+    // Filter by city if not 'All'
+    if (_selectedCity != 'All') {
+      scanRequests =
+          scanRequests.where((request) {
+            final city = (request['cityMunicipality'] ?? '').toString().trim();
+            return city.toLowerCase() == _selectedCity.toLowerCase();
+          }).toList();
+    }
 
     // Build a reviewedAt-anchored time window to match card/SLA logic
     final DateTime now = DateTime.now();
@@ -438,17 +634,39 @@ class _ReportsState extends State<Reports> {
             : '${((within48 / completedInWindow) * 100).toStringAsFixed(0)}%';
 
     // Align completion rate and overdue pending with modal logic and dataset
-    // Use shared helper to match counts exactly
-    // debug log removed
-    final counts = await ScanRequestsService.getCountsForTimeRange(
-      timeRange: _selectedTimeRange,
+    // Calculate counts from already city-filtered scanRequests
+    // Filter by time range first
+    final filteredByTime = ScanRequestsService.filterByTimeRange(
+      scanRequests,
+      _selectedTimeRange,
     );
-    // debug log removed
-    final int completedByCreated = counts['completed'] ?? 0;
-    final int pendingByCreated = counts['pending'] ?? 0;
-    final int totalForCompletion = completedByCreated + pendingByCreated;
 
-    final int overduePendingCreated = counts['overduePending'] ?? 0;
+    // Calculate counts from filtered data
+    int completedByCreated = 0;
+    int pendingByCreated = 0;
+    int overduePendingCreated = 0;
+    final nowForOverdue = DateTime.now();
+
+    for (final r in filteredByTime) {
+      final status = (r['status'] ?? '').toString();
+      if (status == 'completed') {
+        completedByCreated++;
+      } else if (status == 'pending') {
+        pendingByCreated++;
+        final createdAtRaw = r['createdAt'];
+        DateTime? createdAt;
+        if (createdAtRaw is Timestamp) createdAt = createdAtRaw.toDate();
+        if (createdAtRaw is String) createdAt = DateTime.tryParse(createdAtRaw);
+        if (createdAt != null) {
+          final hoursSinceCreated = nowForOverdue.difference(createdAt).inHours;
+          if (hoursSinceCreated > 24) {
+            overduePendingCreated++;
+          }
+        }
+      }
+    }
+
+    final int totalForCompletion = completedByCreated + pendingByCreated;
 
     // Calculate new metrics for time-filtered cards
     // 1. Reviews Completed (reviewedAt-based)
@@ -640,8 +858,19 @@ class _ReportsState extends State<Reports> {
     try {
       // Compute counts based on the selected time range for accuracy
       final all = await ScanRequestsService.getScanRequests();
+      // Filter by city first
+      var cityFiltered = all;
+      if (_selectedCity != 'All') {
+        cityFiltered =
+            all.where((request) {
+              final city =
+                  (request['cityMunicipality'] ?? '').toString().trim();
+              return city.toLowerCase() == _selectedCity.toLowerCase();
+            }).toList();
+      }
+      // Then filter by time range
       final filtered = ScanRequestsService.filterByTimeRange(
-        all,
+        cityFiltered,
         _selectedTimeRange,
       );
       final completedReports =
@@ -667,8 +896,21 @@ class _ReportsState extends State<Reports> {
 
   Future<void> _loadReportsTrend() async {
     try {
-      final trendData = await ScanRequestsService.getReportsTrend(
-        timeRange: _selectedTimeRange,
+      // Get all scan requests and filter by city first
+      final all = await ScanRequestsService.getScanRequests();
+      var cityFiltered = all;
+      if (_selectedCity != 'All') {
+        cityFiltered =
+            all.where((request) {
+              final city =
+                  (request['cityMunicipality'] ?? '').toString().trim();
+              return city.toLowerCase() == _selectedCity.toLowerCase();
+            }).toList();
+      }
+      // Create a filtered service call by pre-filtering the data
+      final trendData = await _getReportsTrendForCity(
+        cityFiltered,
+        _selectedTimeRange,
       );
       // debug log removed
 
@@ -701,8 +943,21 @@ class _ReportsState extends State<Reports> {
 
   Future<void> _loadDiseaseStats() async {
     try {
-      final diseaseData = await ScanRequestsService.getDiseaseStats(
-        timeRange: _selectedTimeRange,
+      // Get all scan requests and filter by city first
+      final all = await ScanRequestsService.getScanRequests();
+      var cityFiltered = all;
+      if (_selectedCity != 'All') {
+        cityFiltered =
+            all.where((request) {
+              final city =
+                  (request['cityMunicipality'] ?? '').toString().trim();
+              return city.toLowerCase() == _selectedCity.toLowerCase();
+            }).toList();
+      }
+      // Create a filtered service call by pre-filtering the data
+      final diseaseData = await _getDiseaseStatsForCity(
+        cityFiltered,
+        _selectedTimeRange,
       );
       // debug log removed
 
@@ -746,6 +1001,16 @@ class _ReportsState extends State<Reports> {
   Future<void> _loadSla() async {
     try {
       final all = await ScanRequestsService.getScanRequests();
+      // Filter by city first
+      var cityFiltered = all;
+      if (_selectedCity != 'All') {
+        cityFiltered =
+            all.where((request) {
+              final city =
+                  (request['cityMunicipality'] ?? '').toString().trim();
+              return city.toLowerCase() == _selectedCity.toLowerCase();
+            }).toList();
+      }
       // Build reviewedAt-anchored window
       final DateTime now = DateTime.now();
       DateTime? startInclusive;
@@ -800,7 +1065,7 @@ class _ReportsState extends State<Reports> {
       }
       int completed = 0;
       int within48 = 0;
-      for (final r in all) {
+      for (final r in cityFiltered) {
         final status = (r['status'] ?? '').toString();
         final createdAt = r['createdAt'];
         DateTime? created;
@@ -948,6 +1213,46 @@ class _ReportsState extends State<Reports> {
                   ),
                   Row(
                     children: [
+                      // City filter
+                      Padding(
+                        padding: const EdgeInsets.only(right: 12),
+                        child: FutureBuilder<List<String>>(
+                          future: _getAvailableCities(),
+                          builder: (context, snapshot) {
+                            final cities = snapshot.data ?? ['All'];
+                            return DropdownButton<String>(
+                              value: _selectedCity,
+                              hint: const Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(Icons.location_city, size: 18),
+                                  SizedBox(width: 4),
+                                  Text('City'),
+                                ],
+                              ),
+                              underline: const SizedBox.shrink(),
+                              items:
+                                  cities.map((city) {
+                                    return DropdownMenuItem(
+                                      value: city,
+                                      child: Text(city),
+                                    );
+                                  }).toList(),
+                              onChanged: (value) {
+                                if (value != null) {
+                                  setState(() {
+                                    _selectedCity = value;
+                                  });
+                                  // Reload data when city filter changes
+                                  _loadData();
+                                  // Also update stats from snapshot with city filter
+                                  _updateStatsFromSnapshot();
+                                }
+                              },
+                            );
+                          },
+                        ),
+                      ),
                       // Global time filter
                       Padding(
                         padding: const EdgeInsets.only(right: 12),
@@ -1047,12 +1352,16 @@ class _ReportsState extends State<Reports> {
                         onPressed: () async {
                           final result = await showDialog<Map<String, String>>(
                             context: context,
-                            builder: (context) => const GenerateReportDialog(),
+                            builder:
+                                (context) => GenerateReportDialog(
+                                  initialCity: _selectedCity,
+                                ),
                           );
                           if (result != null) {
                             final selectedRange =
                                 result['range'] ?? _selectedTimeRange;
                             final pageSize = result['pageSize'] ?? 'A4';
+                            final selectedCity = result['city'] ?? 'All';
                             try {
                               showDialog(
                                 context: context,
@@ -1107,6 +1416,7 @@ class _ReportsState extends State<Reports> {
                                 backgroundAsset:
                                     'assets/report_template_bg.jpg',
                                 preparedBy: preparedBy,
+                                selectedCity: selectedCity,
                               );
                               Navigator.of(context, rootNavigator: true).pop();
                               // Log activity: PDF generated
@@ -1209,12 +1519,44 @@ class _ReportsState extends State<Reports> {
                       child: DiseaseDistributionChart(
                         diseaseStats: _diseaseStats,
                         selectedTimeRange: _selectedTimeRange,
+                        selectedCity: _selectedCity,
                         onTimeRangeChanged: (String newTimeRange) async {
                           await _onTimeRangeChanged(newTimeRange);
                         },
                       ),
                     ),
                   ],
+                ),
+              ),
+              const SizedBox(height: 32),
+
+              // Disease Map Section
+              RepaintBoundary(
+                child: Card(
+                  elevation: 4,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.all(24),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Disease Map',
+                          style: TextStyle(
+                            fontSize: 20,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        DiseaseMapWidget(
+                          selectedCity: _selectedCity,
+                          selectedTimeRange: _selectedTimeRange,
+                        ),
+                      ],
+                    ),
+                  ),
                 ),
               ),
               const SizedBox(height: 32),
@@ -1373,6 +1715,19 @@ class _ReportsState extends State<Reports> {
                             );
                           }
                           final all = snapshot.data ?? [];
+                          // Filter by city first
+                          var cityFiltered = all;
+                          if (_selectedCity != 'All') {
+                            cityFiltered =
+                                all.where((request) {
+                                  final city =
+                                      (request['cityMunicipality'] ?? '')
+                                          .toString()
+                                          .trim();
+                                  return city.toLowerCase() ==
+                                      _selectedCity.toLowerCase();
+                                }).toList();
+                          }
 
                           // Build reviewedAt-anchored window for SLA 48h (matches cards)
                           final DateTime now = DateTime.now();
@@ -1395,6 +1750,12 @@ class _ReportsState extends State<Reports> {
                               ).add(const Duration(days: 1));
                             }
                           }
+                          // Filter by time range
+                          final filtered =
+                              ScanRequestsService.filterByTimeRange(
+                                cityFiltered,
+                                _selectedTimeRange,
+                              );
                           if (startInclusive == null || endExclusive == null) {
                             switch (_selectedTimeRange) {
                               case '1 Day':
@@ -1444,7 +1805,7 @@ class _ReportsState extends State<Reports> {
                           }
                           int completed = 0;
                           int within48 = 0;
-                          for (final r in all) {
+                          for (final r in filtered) {
                             if ((r['status'] ?? '') != 'completed') continue;
                             final createdAt = r['createdAt'];
                             final reviewedAt = r['reviewedAt'];
@@ -2392,9 +2753,23 @@ class _ReportsState extends State<Reports> {
                             );
                           }
                           final all = snapshot.data ?? [];
+                          // Filter by city first
+                          var cityFiltered = all;
+                          if (_selectedCity != 'All') {
+                            cityFiltered =
+                                all.where((request) {
+                                  final city =
+                                      (request['cityMunicipality'] ?? '')
+                                          .toString()
+                                          .trim();
+                                  return city.toLowerCase() ==
+                                      _selectedCity.toLowerCase();
+                                }).toList();
+                          }
+                          // Then filter by time range
                           final filtered =
                               ScanRequestsService.filterByTimeRange(
-                                all,
+                                cityFiltered,
                                 _selectedTimeRange,
                               );
 
@@ -3803,6 +4178,7 @@ class ReportsListTable extends StatefulWidget {
 class _ReportsListTableState extends State<ReportsListTable>
     with AutomaticKeepAliveClientMixin {
   String _searchQuery = '';
+  String _selectedCity = 'All'; // City filter
   List<Map<String, dynamic>> _reports = [];
   bool _loading = true;
   String? _error;
@@ -3838,31 +4214,60 @@ class _ReportsListTableState extends State<ReportsListTable>
   }
 
   List<Map<String, dynamic>> get _filteredReports {
-    if (_searchQuery.isEmpty) return _reports;
-    final query = _searchQuery.toLowerCase();
-    return _reports.where((report) {
-      final user =
-          (report['userName'] ?? report['userId'] ?? '')
-              .toString()
-              .toLowerCase();
-      final status = (report['status'] ?? '').toString().toLowerCase();
-      String disease = '';
-      final ds = report['diseaseSummary'];
-      if (ds is List && ds.isNotEmpty) {
-        final first = ds.first;
-        if (first is Map<String, dynamic>) {
-          disease =
-              (first['name'] ?? first['label'] ?? first['disease'] ?? '')
-                  .toString()
-                  .toLowerCase();
-        } else {
-          disease = first.toString().toLowerCase();
-        }
+    var filtered = _reports;
+
+    // Filter by city first
+    if (_selectedCity != 'All') {
+      filtered =
+          filtered.where((report) {
+            final city = (report['cityMunicipality'] ?? '').toString().trim();
+            return city.toLowerCase() == _selectedCity.toLowerCase();
+          }).toList();
+    }
+
+    // Then filter by search query
+    if (_searchQuery.isNotEmpty) {
+      final query = _searchQuery.toLowerCase();
+      filtered =
+          filtered.where((report) {
+            final user =
+                (report['userName'] ?? report['userId'] ?? '')
+                    .toString()
+                    .toLowerCase();
+            final status = (report['status'] ?? '').toString().toLowerCase();
+            String disease = '';
+            final ds = report['diseaseSummary'];
+            if (ds is List && ds.isNotEmpty) {
+              final first = ds.first;
+              if (first is Map<String, dynamic>) {
+                disease =
+                    (first['name'] ?? first['label'] ?? first['disease'] ?? '')
+                        .toString()
+                        .toLowerCase();
+              } else {
+                disease = first.toString().toLowerCase();
+              }
+            }
+            return user.contains(query) ||
+                status.contains(query) ||
+                disease.contains(query);
+          }).toList();
+    }
+
+    return filtered;
+  }
+
+  // Get unique list of cities from reports
+  List<String> get _availableCities {
+    final cities = <String>{};
+    for (final report in _reports) {
+      final city = (report['cityMunicipality'] ?? '').toString().trim();
+      if (city.isNotEmpty) {
+        cities.add(city);
       }
-      return user.contains(query) ||
-          status.contains(query) ||
-          disease.contains(query);
-    }).toList();
+    }
+    final sortedCities = cities.toList()..sort();
+    return ['All', ...sortedCities];
   }
 
   List<Map<String, dynamic>> get _visibleReports {
@@ -3889,30 +4294,72 @@ class _ReportsListTableState extends State<ReportsListTable>
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        SizedBox(
-          width: 400,
-          child: Padding(
-            padding: const EdgeInsets.only(bottom: 16),
-            child: TextField(
-              decoration: InputDecoration(
-                hintText: 'Search by user, disease, or status',
-                prefixIcon: const Icon(Icons.search),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8),
+        Row(
+          children: [
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.only(bottom: 16, right: 8),
+                child: TextField(
+                  decoration: InputDecoration(
+                    hintText: 'Search by user, disease, or status',
+                    prefixIcon: const Icon(Icons.search),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                  ),
+                  onChanged: (value) {
+                    _searchDebounce?.cancel();
+                    _searchDebounce = Timer(
+                      const Duration(milliseconds: 250),
+                      () {
+                        if (!mounted) return;
+                        setState(() {
+                          _searchQuery = value;
+                          _page = 0; // reset page when searching
+                        });
+                      },
+                    );
+                  },
                 ),
               ),
-              onChanged: (value) {
-                _searchDebounce?.cancel();
-                _searchDebounce = Timer(const Duration(milliseconds: 250), () {
-                  if (!mounted) return;
-                  setState(() {
-                    _searchQuery = value;
-                    _page = 0; // reset page when searching
-                  });
-                });
-              },
             ),
-          ),
+            const SizedBox(width: 8),
+            Padding(
+              padding: const EdgeInsets.only(bottom: 16),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                decoration: BoxDecoration(
+                  border: Border.all(color: Colors.grey),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: DropdownButton<String>(
+                  value: _selectedCity,
+                  hint: const Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.location_city, size: 20),
+                      SizedBox(width: 8),
+                      Text('City'),
+                    ],
+                  ),
+                  items:
+                      _availableCities.map((city) {
+                        return DropdownMenuItem(value: city, child: Text(city));
+                      }).toList(),
+                  onChanged: (value) {
+                    if (value != null) {
+                      setState(() {
+                        _selectedCity = value;
+                        _page = 0; // reset page when filtering
+                      });
+                    }
+                  },
+                  underline: const SizedBox.shrink(),
+                  isExpanded: false,
+                ),
+              ),
+            ),
+          ],
         ),
         // Pagination controls
         Row(
@@ -4800,10 +5247,12 @@ class DiseaseDistributionChart extends StatefulWidget {
   final double? height;
   final Function(String)? onTimeRangeChanged;
   final String selectedTimeRange;
+  final String selectedCity;
   const DiseaseDistributionChart({
     Key? key,
     required this.diseaseStats,
     this.height,
+    this.selectedCity = 'All',
     this.onTimeRangeChanged,
     required this.selectedTimeRange,
   }) : super(key: key);
@@ -4994,7 +5443,14 @@ class _DiseaseDistributionChartState extends State<DiseaseDistributionChart> {
   @override
   void didUpdateWidget(covariant DiseaseDistributionChart oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.selectedTimeRange != widget.selectedTimeRange &&
+    // If city changed, clear live aggregated to use widget.diseaseStats (which is filtered by city)
+    if (oldWidget.selectedCity != widget.selectedCity) {
+      setState(() {
+        _liveAggregated = [];
+      });
+    }
+    if ((oldWidget.selectedTimeRange != widget.selectedTimeRange ||
+            oldWidget.selectedCity != widget.selectedCity) &&
         _lastSnapshot != null) {
       final agg = _aggregateFromSnapshot(
         _lastSnapshot,
@@ -5067,11 +5523,21 @@ class _DiseaseDistributionChartState extends State<DiseaseDistributionChart> {
       );
 
       final all = await ScanRequestsService.getScanRequests();
+      // Filter by city first
+      var cityFiltered = all;
+      if (widget.selectedCity != 'All') {
+        cityFiltered =
+            all.where((request) {
+              final city =
+                  (request['cityMunicipality'] ?? '').toString().trim();
+              return city.toLowerCase() == widget.selectedCity.toLowerCase();
+            }).toList();
+      }
       final Map<String, int> diseaseByDay = {};
       final Map<String, int> healthyByDay = {};
       final Map<String, Map<String, int>> diseaseDayCounts = {};
 
-      for (final r in all) {
+      for (final r in cityFiltered) {
         if ((r['status'] ?? '') != 'completed') continue;
         final createdAt = r['createdAt'];
         DateTime? dt;
@@ -5084,32 +5550,47 @@ class _DiseaseDistributionChartState extends State<DiseaseDistributionChart> {
 
         List<dynamic> diseaseSummary =
             (r['diseaseSummary'] as List<dynamic>?) ?? const [];
+
+        // Collect unique disease types in this report (each report counts as 1 per disease type)
+        final Set<String> diseasesInReport = {};
+        bool hasHealthy = false;
+
         if (diseaseSummary.isEmpty) {
-          healthyByDay[key] = (healthyByDay[key] ?? 0) + 1;
-          continue;
+          // If no diseases, count as healthy
+          hasHealthy = true;
+        } else {
+          for (final d in diseaseSummary) {
+            String name = 'Unknown';
+            if (d is Map<String, dynamic>) {
+              name =
+                  (d['name'] ?? d['label'] ?? d['disease'] ?? 'Unknown')
+                      .toString();
+            } else if (d is String) {
+              name = d;
+            }
+
+            final lower = name.toLowerCase();
+            if (lower == 'healthy') {
+              hasHealthy = true;
+              continue;
+            }
+            if (lower.contains('tip burn') || lower.contains('unknown'))
+              continue;
+
+            // Add disease type to set (each report contributes 1 per disease type)
+            diseasesInReport.add(lower);
+          }
         }
-        for (final d in diseaseSummary) {
-          String name = 'Unknown';
-          int count = 1;
-          if (d is Map<String, dynamic>) {
-            name =
-                (d['name'] ?? d['label'] ?? d['disease'] ?? 'Unknown')
-                    .toString();
-            final c = d['count'] ?? d['confidence'] ?? 1;
-            if (c is num) count = c.round();
-          } else if (d is String) {
-            name = d;
-          }
-          final lower = name.toLowerCase();
-          if (lower == 'healthy') {
-            healthyByDay[key] = (healthyByDay[key] ?? 0) + count;
-            continue;
-          }
-          if (lower.contains('tip burn') || lower.contains('unknown')) continue;
-          diseaseByDay[key] = (diseaseByDay[key] ?? 0) + count;
-          final perDay = diseaseDayCounts[lower] ?? <String, int>{};
-          perDay[key] = (perDay[key] ?? 0) + count;
-          diseaseDayCounts[lower] = perDay;
+
+        // Count each disease type once per report for this day
+        if (hasHealthy) {
+          healthyByDay[key] = (healthyByDay[key] ?? 0) + 1;
+        }
+        for (final diseaseName in diseasesInReport) {
+          diseaseByDay[key] = (diseaseByDay[key] ?? 0) + 1;
+          final perDay = diseaseDayCounts[diseaseName] ?? <String, int>{};
+          perDay[key] = (perDay[key] ?? 0) + 1;
+          diseaseDayCounts[diseaseName] = perDay;
         }
       }
 
@@ -5439,12 +5920,20 @@ class _DiseaseDistributionChartState extends State<DiseaseDistributionChart> {
     final Map<String, int> diseaseToCount = {};
     int healthyCount = 0;
 
-    final Iterable<Map<String, dynamic>> docs =
+    Iterable<Map<String, dynamic>> docs =
         source is QuerySnapshot
             ? source.docs.map(
               (d) => (d.data() as Map<String, dynamic>?) ?? const {},
             )
             : (source is List<Map<String, dynamic>> ? source : const []);
+
+    // Filter by city if not 'All'
+    if (widget.selectedCity != 'All') {
+      docs = docs.where((data) {
+        final city = (data['cityMunicipality'] ?? '').toString().trim();
+        return city.toLowerCase() == widget.selectedCity.toLowerCase();
+      });
+    }
 
     for (final data in docs) {
       if (data.isEmpty) continue;
@@ -5464,7 +5953,12 @@ class _DiseaseDistributionChartState extends State<DiseaseDistributionChart> {
 
       final List<dynamic> diseaseSummary =
           (data['diseaseSummary'] as List<dynamic>?) ?? const [];
+
+      // Collect unique disease types in this report (each report counts as 1 per disease type)
+      final Set<String> diseasesInReport = {};
+
       if (diseaseSummary.isEmpty) {
+        // If no diseases, count as healthy
         healthyCount += 1;
         continue;
       }
@@ -5475,17 +5969,10 @@ class _DiseaseDistributionChartState extends State<DiseaseDistributionChart> {
               (d['name'] ?? d['label'] ?? d['disease'] ?? 'Unknown').toString();
           final String normalized =
               rawName.replaceAll(RegExp(r'[_\-]+'), ' ').trim().toLowerCase();
-          final dynamic countRaw = d['count'] ?? d['confidence'] ?? 1;
-          int countVal;
-          if (countRaw is num) {
-            countVal = countRaw.round();
-          } else {
-            final parsed = int.tryParse(countRaw.toString());
-            countVal = parsed == null ? 1 : parsed;
-          }
+
           // Route Healthy to dedicated panel, do not include in disease bars
           if (normalized == 'healthy') {
-            healthyCount += countVal;
+            diseasesInReport.add('Healthy');
             continue;
           }
           // Do not display Unknown/Tip Burn in disease bars
@@ -5494,7 +5981,17 @@ class _DiseaseDistributionChartState extends State<DiseaseDistributionChart> {
               normalized == 'tipburn') {
             continue;
           }
-          diseaseToCount[rawName] = (diseaseToCount[rawName] ?? 0) + countVal;
+          // Add disease type to set (each report contributes 1 per disease type)
+          diseasesInReport.add(rawName);
+        }
+      }
+
+      // Count each disease type once per report
+      for (final diseaseName in diseasesInReport) {
+        if (diseaseName == 'Healthy') {
+          healthyCount += 1;
+        } else {
+          diseaseToCount[diseaseName] = (diseaseToCount[diseaseName] ?? 0) + 1;
         }
       }
     }
@@ -8117,7 +8614,8 @@ class _ExpertResponseStats {
 }
 
 class GenerateReportDialog extends StatefulWidget {
-  const GenerateReportDialog({Key? key}) : super(key: key);
+  final String? initialCity;
+  const GenerateReportDialog({Key? key, this.initialCity}) : super(key: key);
 
   @override
   State<GenerateReportDialog> createState() => _GenerateReportDialogState();
@@ -8127,6 +8625,9 @@ class _GenerateReportDialogState extends State<GenerateReportDialog> {
   String _selectedRange = 'Last 7 Days';
   DateTime? _customStart;
   DateTime? _customEnd;
+  String _selectedCity = 'All';
+  List<String> _availableCities = ['All'];
+  bool _loadingCities = true;
   // Page size fixed to A4
   final List<Map<String, dynamic>> _ranges = [
     {
@@ -8173,6 +8674,43 @@ class _GenerateReportDialogState extends State<GenerateReportDialog> {
 
   Map<String, dynamic> get _selectedRangeData =>
       _ranges.firstWhere((r) => r['label'] == _selectedRange);
+
+  @override
+  void initState() {
+    super.initState();
+    _selectedCity = widget.initialCity ?? 'All';
+    _loadAvailableCities();
+  }
+
+  Future<void> _loadAvailableCities() async {
+    try {
+      final scanRequests = await ScanRequestsService.getScanRequests();
+      final cities = <String>{'All'};
+      for (final request in scanRequests) {
+        final city = (request['cityMunicipality'] ?? '').toString().trim();
+        if (city.isNotEmpty) {
+          cities.add(city);
+        }
+      }
+      if (mounted) {
+        setState(() {
+          _availableCities = cities.toList()..sort();
+          _loadingCities = false;
+          // If initialCity was provided and exists, use it; otherwise keep 'All'
+          if (widget.initialCity != null &&
+              _availableCities.contains(widget.initialCity)) {
+            _selectedCity = widget.initialCity!;
+          }
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _loadingCities = false;
+        });
+      }
+    }
+  }
 
   String _formatMonthYear(DateTime date) {
     const months = [
@@ -8249,6 +8787,78 @@ class _GenerateReportDialogState extends State<GenerateReportDialog> {
             style: TextStyle(fontSize: 15, color: Colors.black87),
           ),
           const SizedBox(height: 18),
+          // City Filter
+          const Text(
+            'Filter by City:',
+            style: TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w500,
+              color: Colors.black87,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            decoration: BoxDecoration(
+              color: Colors.grey[100],
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: Colors.grey[200]!),
+            ),
+            child:
+                _loadingCities
+                    ? const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 8),
+                      child: SizedBox(
+                        height: 16,
+                        width: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
+                    )
+                    : DropdownButton<String>(
+                      value: _selectedCity,
+                      isExpanded: true,
+                      underline: const SizedBox(),
+                      icon: const Icon(Icons.arrow_drop_down),
+                      items:
+                          _availableCities.map((city) {
+                            return DropdownMenuItem<String>(
+                              value: city,
+                              child: Row(
+                                children: [
+                                  const Icon(
+                                    Icons.location_city,
+                                    size: 20,
+                                    color: Color(0xFF2D7204),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Text(
+                                    city,
+                                    style: const TextStyle(fontSize: 15),
+                                  ),
+                                ],
+                              ),
+                            );
+                          }).toList(),
+                      onChanged: (value) {
+                        if (value != null) {
+                          setState(() {
+                            _selectedCity = value;
+                          });
+                        }
+                      },
+                    ),
+          ),
+          const SizedBox(height: 18),
+          // Time Range Filter
+          const Text(
+            'Time Range:',
+            style: TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w500,
+              color: Colors.black87,
+            ),
+          ),
+          const SizedBox(height: 8),
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
             decoration: BoxDecoration(
@@ -8499,7 +9109,7 @@ class _GenerateReportDialogState extends State<GenerateReportDialog> {
             }
 
             // Show confirmation dialog before generating PDF
-            _showConfirmationDialog(context, range);
+            _showConfirmationDialog(context, range, _selectedCity);
           },
         ),
       ],
@@ -8535,7 +9145,11 @@ class _GenerateReportDialogState extends State<GenerateReportDialog> {
     return range;
   }
 
-  void _showConfirmationDialog(BuildContext context, String range) {
+  void _showConfirmationDialog(
+    BuildContext context,
+    String range,
+    String city,
+  ) {
     final displayRange = _formatRangeForDisplay(range);
 
     showDialog(
@@ -8600,41 +9214,83 @@ class _GenerateReportDialogState extends State<GenerateReportDialog> {
                               borderRadius: BorderRadius.circular(12),
                               border: Border.all(color: Colors.green[200]!),
                             ),
-                            child: Row(
+                            child: Column(
                               children: [
-                                const Icon(
-                                  Icons.calendar_today,
-                                  color: Color(0xFF2D7204),
-                                  size: 24,
-                                ),
-                                const SizedBox(width: 12),
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        range.startsWith('Monthly')
-                                            ? 'Report Period: Monthly'
-                                            : 'Report Period',
-                                        style: const TextStyle(
-                                          fontSize: 12,
-                                          color: Colors.black54,
-                                          fontWeight: FontWeight.w500,
-                                        ),
+                                Row(
+                                  children: [
+                                    const Icon(
+                                      Icons.calendar_today,
+                                      color: Color(0xFF2D7204),
+                                      size: 24,
+                                    ),
+                                    const SizedBox(width: 12),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            range.startsWith('Monthly')
+                                                ? 'Report Period: Monthly'
+                                                : 'Report Period',
+                                            style: const TextStyle(
+                                              fontSize: 12,
+                                              color: Colors.black54,
+                                              fontWeight: FontWeight.w500,
+                                            ),
+                                          ),
+                                          const SizedBox(height: 4),
+                                          Text(
+                                            displayRange,
+                                            style: const TextStyle(
+                                              fontSize: 18,
+                                              color: Color(0xFF2D7204),
+                                              fontWeight: FontWeight.bold,
+                                            ),
+                                          ),
+                                        ],
                                       ),
-                                      const SizedBox(height: 4),
-                                      Text(
-                                        displayRange,
-                                        style: const TextStyle(
-                                          fontSize: 18,
-                                          color: Color(0xFF2D7204),
-                                          fontWeight: FontWeight.bold,
+                                    ),
+                                  ],
+                                ),
+                                if (city != 'All') ...[
+                                  const SizedBox(height: 12),
+                                  Row(
+                                    children: [
+                                      const Icon(
+                                        Icons.location_city,
+                                        color: Color(0xFF2D7204),
+                                        size: 24,
+                                      ),
+                                      const SizedBox(width: 12),
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            const Text(
+                                              'City Filter',
+                                              style: TextStyle(
+                                                fontSize: 12,
+                                                color: Colors.black54,
+                                                fontWeight: FontWeight.w500,
+                                              ),
+                                            ),
+                                            const SizedBox(height: 4),
+                                            Text(
+                                              city,
+                                              style: const TextStyle(
+                                                fontSize: 18,
+                                                color: Color(0xFF2D7204),
+                                                fontWeight: FontWeight.bold,
+                                              ),
+                                            ),
+                                          ],
                                         ),
                                       ),
                                     ],
                                   ),
-                                ),
+                                ],
                               ],
                             ),
                           ),
@@ -8752,6 +9408,7 @@ class _GenerateReportDialogState extends State<GenerateReportDialog> {
                             Navigator.pop(context, {
                               'range': range,
                               'pageSize': 'A4',
+                              'city': city,
                             }); // Close main dialog and return result
                           },
                         ),

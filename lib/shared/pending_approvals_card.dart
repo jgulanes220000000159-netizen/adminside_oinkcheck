@@ -59,38 +59,31 @@ class _PendingApprovalsCardState extends State<PendingApprovalsCard> {
               onTap: widget.onTap ?? _showPendingUsersModal,
               borderRadius: BorderRadius.circular(12),
               child: Padding(
-                padding: const EdgeInsets.all(20),
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
                 child: child, // Use the child below
               ),
             ),
           );
         },
         child: Column(
+          mainAxisSize: MainAxisSize.min,
           mainAxisAlignment: MainAxisAlignment.center,
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
-            // Header (no refresh button)
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                const SizedBox(width: 24), // Spacer to center the content
-                const Spacer(),
-              ],
-            ),
             // Icon
             Container(
-              padding: const EdgeInsets.all(12),
+              padding: const EdgeInsets.all(6),
               decoration: BoxDecoration(
                 color: Colors.orange.withOpacity(0.1),
-                borderRadius: BorderRadius.circular(8),
+                borderRadius: BorderRadius.circular(6),
               ),
               child: const Icon(
                 Icons.pending_actions,
-                size: 24,
+                size: 18,
                 color: Colors.orangeAccent,
               ),
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 8),
             // Number (real-time count)
             Builder(
               builder: (context) {
@@ -105,51 +98,56 @@ class _PendingApprovalsCardState extends State<PendingApprovalsCard> {
                     Text(
                       '$count',
                       style: const TextStyle(
-                        fontSize: 28,
+                        fontSize: 24,
                         fontWeight: FontWeight.bold,
                         color: Colors.black87,
                       ),
                     ),
-                    const SizedBox(height: 8),
+                    const SizedBox(height: 3),
                     const Text(
                       'Pending User Registrations',
                       style: TextStyle(
-                        fontSize: 14,
+                        fontSize: 11,
                         color: Colors.grey,
                         fontWeight: FontWeight.w500,
                       ),
+                      textAlign: TextAlign.center,
                     ),
-                    const SizedBox(height: 12),
-                    if (count > 0)
+                    if (count > 0) ...[
+                      const SizedBox(height: 4),
                       Container(
                         padding: const EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 4,
+                          horizontal: 5,
+                          vertical: 2,
                         ),
                         decoration: BoxDecoration(
                           color: Colors.orangeAccent.withOpacity(0.1),
-                          borderRadius: BorderRadius.circular(6),
+                          borderRadius: BorderRadius.circular(4),
                         ),
                         child: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             const Icon(
                               Icons.warning_amber,
-                              size: 12,
+                              size: 9,
                               color: Colors.orangeAccent,
                             ),
-                            const SizedBox(width: 4),
-                            Text(
-                              'Need admin verification',
-                              style: TextStyle(
-                                fontSize: 10,
-                                color: Colors.orangeAccent[700],
-                                fontWeight: FontWeight.w500,
+                            const SizedBox(width: 2),
+                            Flexible(
+                              child: Text(
+                                'Need admin verification',
+                                style: TextStyle(
+                                  fontSize: 8,
+                                  color: Colors.orangeAccent[700],
+                                  fontWeight: FontWeight.w500,
+                                ),
+                                overflow: TextOverflow.ellipsis,
                               ),
                             ),
                           ],
                         ),
                       ),
+                    ],
                   ],
                 );
               },

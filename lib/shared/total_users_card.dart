@@ -525,38 +525,31 @@ class _TotalReportsReviewedCardState extends State<TotalReportsReviewedCard> {
               onTap: widget.onTap ?? () => _showReportsModal(context),
               borderRadius: BorderRadius.circular(12),
               child: Padding(
-                padding: const EdgeInsets.all(20),
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
                 child: child, // Use the child below
               ),
             ),
           );
         },
         child: Column(
+          mainAxisSize: MainAxisSize.min,
           mainAxisAlignment: MainAxisAlignment.center,
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
-            // Header (no refresh button)
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                const SizedBox(width: 24), // Spacer to center the content
-                const Spacer(),
-              ],
-            ),
             // Icon
             Container(
-              padding: const EdgeInsets.all(12),
+              padding: const EdgeInsets.all(6),
               decoration: BoxDecoration(
                 color: Colors.green.withOpacity(0.1),
-                borderRadius: BorderRadius.circular(8),
+                borderRadius: BorderRadius.circular(6),
               ),
               child: const Icon(
                 Icons.assignment_turned_in,
-                size: 24,
+                size: 18,
                 color: Colors.green,
               ),
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: 8),
             // Number (real-time count)
             Builder(
               builder: (context) {
@@ -569,48 +562,53 @@ class _TotalReportsReviewedCardState extends State<TotalReportsReviewedCard> {
                 final pendingReports =
                     docs.where((doc) => doc['status'] == 'pending').length;
                 return Column(
+                  mainAxisSize: MainAxisSize.min,
                   children: [
                     Text(
                       '$completedReports',
                       style: const TextStyle(
-                        fontSize: 28,
+                        fontSize: 24,
                         fontWeight: FontWeight.bold,
                         color: Colors.black87,
                       ),
                     ),
-                    const SizedBox(height: 8),
+                    const SizedBox(height: 3),
                     const Text(
                       'Total Reports Reviewed',
                       style: TextStyle(
-                        fontSize: 13,
+                        fontSize: 11,
                         color: Colors.grey,
                         fontWeight: FontWeight.w500,
                       ),
+                      textAlign: TextAlign.center,
                     ),
-                    const SizedBox(height: 8),
+                    const SizedBox(height: 4),
                     Wrap(
                       alignment: WrapAlignment.center,
                       crossAxisAlignment: WrapCrossAlignment.center,
-                      spacing: 10,
+                      spacing: 8,
                       runSpacing: 2,
                       children: [
                         Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             Container(
-                              width: 8,
-                              height: 8,
+                              width: 6,
+                              height: 6,
                               decoration: const BoxDecoration(
                                 color: Colors.green,
                                 shape: BoxShape.circle,
                               ),
                             ),
-                            const SizedBox(width: 6),
-                            Text(
-                              '$completedReports Completed',
-                              style: const TextStyle(
-                                fontSize: 12,
-                                color: Colors.grey,
+                            const SizedBox(width: 4),
+                            Flexible(
+                              child: Text(
+                                '$completedReports Completed',
+                                style: const TextStyle(
+                                  fontSize: 11,
+                                  color: Colors.grey,
+                                ),
+                                overflow: TextOverflow.ellipsis,
                               ),
                             ),
                           ],
@@ -619,19 +617,22 @@ class _TotalReportsReviewedCardState extends State<TotalReportsReviewedCard> {
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             Container(
-                              width: 8,
-                              height: 8,
+                              width: 6,
+                              height: 6,
                               decoration: const BoxDecoration(
                                 color: Colors.orange,
                                 shape: BoxShape.circle,
                               ),
                             ),
-                            const SizedBox(width: 6),
-                            Text(
-                              '$pendingReports Pending Review',
-                              style: const TextStyle(
-                                fontSize: 12,
-                                color: Colors.grey,
+                            const SizedBox(width: 4),
+                            Flexible(
+                              child: Text(
+                                '$pendingReports Pending Review',
+                                style: const TextStyle(
+                                  fontSize: 11,
+                                  color: Colors.grey,
+                                ),
+                                overflow: TextOverflow.ellipsis,
                               ),
                             ),
                           ],
@@ -4281,34 +4282,27 @@ class _TotalUsersCardState extends State<TotalUsersCard> {
               onTap: widget.onTap,
               borderRadius: BorderRadius.circular(12),
               child: Padding(
-                padding: const EdgeInsets.all(20),
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
                 child: child, // Use the child below
               ),
             ),
           );
         },
         child: Column(
+          mainAxisSize: MainAxisSize.min,
           mainAxisAlignment: MainAxisAlignment.center,
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
-            // Header (no refresh button)
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                const SizedBox(width: 24), // Spacer to center the content
-                const Spacer(),
-              ],
-            ),
             // Icon
             Container(
-              padding: const EdgeInsets.all(12),
+              padding: const EdgeInsets.all(6),
               decoration: BoxDecoration(
                 color: Colors.blue.withOpacity(0.1),
-                borderRadius: BorderRadius.circular(8),
+                borderRadius: BorderRadius.circular(6),
               ),
-              child: const Icon(Icons.people, size: 24, color: Colors.blue),
+              child: const Icon(Icons.people, size: 18, color: Colors.blue),
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 8),
             // Number (real-time count)
             Builder(
               builder: (context) {
@@ -4324,55 +4318,62 @@ class _TotalUsersCardState extends State<TotalUsersCard> {
                     Text(
                       '$totalUsers',
                       style: const TextStyle(
-                        fontSize: 28,
+                        fontSize: 24,
                         fontWeight: FontWeight.bold,
                         color: Colors.black87,
                       ),
                     ),
-                    const SizedBox(height: 8),
+                    const SizedBox(height: 3),
                     const Text(
                       'Total Users',
                       style: TextStyle(
-                        fontSize: 14,
+                        fontSize: 11,
                         color: Colors.grey,
                         fontWeight: FontWeight.w500,
                       ),
                     ),
-                    const SizedBox(height: 12),
+                    const SizedBox(height: 4),
                     Row(
                       mainAxisAlignment: MainAxisAlignment.center,
+                      mainAxisSize: MainAxisSize.min,
                       children: [
                         Container(
-                          width: 8,
-                          height: 8,
+                          width: 6,
+                          height: 6,
                           decoration: const BoxDecoration(
                             color: Colors.green,
                             shape: BoxShape.circle,
                           ),
                         ),
-                        const SizedBox(width: 6),
-                        Text(
-                          '${totalUsers - pendingUsers} Active',
-                          style: const TextStyle(
-                            fontSize: 12,
-                            color: Colors.grey,
+                        const SizedBox(width: 4),
+                        Flexible(
+                          child: Text(
+                            '${totalUsers - pendingUsers} Active',
+                            style: const TextStyle(
+                              fontSize: 11,
+                              color: Colors.grey,
+                            ),
+                            overflow: TextOverflow.ellipsis,
                           ),
                         ),
-                        const SizedBox(width: 12),
+                        const SizedBox(width: 8),
                         Container(
-                          width: 8,
-                          height: 8,
+                          width: 6,
+                          height: 6,
                           decoration: const BoxDecoration(
                             color: Colors.orange,
                             shape: BoxShape.circle,
                           ),
                         ),
-                        const SizedBox(width: 6),
-                        Text(
-                          '$pendingUsers Pending',
-                          style: const TextStyle(
-                            fontSize: 12,
-                            color: Colors.grey,
+                        const SizedBox(width: 4),
+                        Flexible(
+                          child: Text(
+                            '$pendingUsers Pending',
+                            style: const TextStyle(
+                              fontSize: 11,
+                              color: Colors.grey,
+                            ),
+                            overflow: TextOverflow.ellipsis,
                           ),
                         ),
                       ],
