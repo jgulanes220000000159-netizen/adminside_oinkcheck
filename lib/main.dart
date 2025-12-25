@@ -6,6 +6,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'firebase_options.dart';
 import 'screens/admin_login.dart';
+import 'screens/admin_setup.dart';
 import 'screens/admin_dashboard.dart';
 import 'models/admin_user.dart';
 import 'services/firebase_monitor.dart';
@@ -61,6 +62,10 @@ class MyApp extends StatelessWidget {
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
       ),
+      routes: {
+        '/login': (context) => const AdminLogin(),
+        '/setup': (context) => const AdminSetup(),
+      },
       home: const AuthWrapper(),
     );
   }
@@ -116,8 +121,30 @@ class AuthWrapper extends StatelessWidget {
           );
         }
 
-        // User is not signed in, show login screen
-        return const AdminLogin();
+        // User is not signed in, check if any admins exist
+        return FutureBuilder<QuerySnapshot>(
+          future: FirebaseFirestore.instance
+              .collection('admins')
+              .limit(1)
+              .get(),
+          builder: (context, adminCheckSnapshot) {
+            if (adminCheckSnapshot.connectionState ==
+                ConnectionState.waiting) {
+              return const Scaffold(
+                body: Center(child: CircularProgressIndicator()),
+              );
+            }
+
+            // If no admins exist, show setup screen
+            if (adminCheckSnapshot.hasData &&
+                adminCheckSnapshot.data!.docs.isEmpty) {
+              return const AdminSetup();
+            }
+
+            // Otherwise show login screen
+            return const AdminLogin();
+          },
+        );
       },
     );
   }

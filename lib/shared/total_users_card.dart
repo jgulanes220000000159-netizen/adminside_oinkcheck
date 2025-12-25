@@ -61,29 +61,77 @@ Future<String> resolveStorageImageUrl(dynamic imageData) async {
 }
 
 // Shared disease-to-color mapping used across modals and cards
+// Matches the color scheme from reports.dart
 Color diseaseColor(String disease) {
+  // Normalize common separators and whitespace
   final normalized =
-      (disease.toString())
-          .replaceAll(RegExp(r'[\-_]+'), ' ')
-          .trim()
-          .toLowerCase();
-  if (normalized.contains('healthy')) return Colors.blue;
-  if (normalized.contains('powdery') || normalized.contains('mildew')) {
-    return Colors.green.shade900;
+      disease
+          .toLowerCase()
+          .replaceAll(RegExp(r'[_\-]+'), ' ')
+          .replaceAll(RegExp(r'\s+'), ' ')
+          .trim();
+
+  // Handle display names and model labels
+  switch (normalized) {
+    // Healthy — Blue (#1E88E5)
+    case 'healthy':
+      return const Color(0xFF1E88E5);
+
+    // Bacterial Erysipelas — Red (#E53935)
+    // Model label: infected_bacterial_erysipelas
+    case 'bacterial erysipelas':
+    case 'infected bacterial erysipelas':
+      return const Color(0xFFE53935);
+
+    // Greasy Pig Disease — Orange (#FB8C00)
+    // Model label: infected_bacterial_greasy
+    case 'greasy pig disease':
+    case 'infected bacterial greasy':
+    case 'bacterial greasy':
+      return const Color(0xFFFB8C00);
+
+    // Sunburn — Yellow (#FDD835)
+    // Model label: infected_environmental_sunburn
+    case 'sunburn':
+    case 'infected environmental sunburn':
+    case 'environmental sunburn':
+      return const Color(0xFFFDD835);
+
+    // Ringworm — Purple (#8E24AA)
+    // Model label: infected_fungal_ringworm
+    case 'ringworm':
+    case 'infected fungal ringworm':
+    case 'fungal ringworm':
+      return const Color(0xFF8E24AA);
+
+    // Mange — Brown (#6D4C41)
+    // Model label: infected_parasitic_mange
+    case 'mange':
+    case 'infected parasitic mange':
+    case 'parasitic mange':
+      return const Color(0xFF6D4C41);
+
+    // Foot-and-Mouth Disease — Pink (#D81B60)
+    // Model label: infected_viral_foot_and_mouth
+    case 'foot and mouth disease':
+    case 'foot-and-mouth disease':
+    case 'infected viral foot and mouth':
+    case 'infected viral foot and mouth disease':
+      return const Color(0xFFD81B60);
+
+    // Swine Pox — Green (#43A047)
+    // Model label: swine_pox
+    case 'swine pox':
+    case 'swinepox':
+      return const Color(0xFF43A047);
+
+    // Unknown — Grey (fallback)
+    case 'unknown':
+    case 'tip burn':
+    case 'tip_burn':
+    default:
+      return Colors.grey;
   }
-  if (normalized.contains('dieback')) return Colors.redAccent;
-  if (normalized.contains('bacterial') && normalized.contains('spot')) {
-    return Colors.purple;
-  }
-  if (normalized.contains('anthracnose')) return Colors.orange;
-  if (normalized.contains('tip burn') || normalized.contains('tipburn')) {
-    return Colors.brown;
-  }
-  if (normalized == 'unknown') return Colors.blueGrey;
-  if (normalized.contains('rust')) return Colors.orange;
-  if (normalized.contains('blight')) return Colors.deepOrange;
-  if (normalized.contains('spot')) return Colors.teal;
-  return Colors.redAccent;
 }
 
 class TotalUsersCard extends StatefulWidget {

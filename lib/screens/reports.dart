@@ -14,6 +14,9 @@ import 'dart:async';
 import '../shared/date_range_picker.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:firebase_storage/firebase_storage.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
+import '../shared/total_users_card.dart' show resolveStorageImageUrl;
 
 // picker moved to lib/shared/date_range_picker.dart
 
@@ -56,9 +59,6 @@ class _ReportsState extends State<Reports> {
   int _totalScansSubmitted = 0; // Scans submitted in period
   int _scansCompletedFromPeriod =
       0; // Scans submitted in period that got reviewed
-  String _healthyRate = '—';
-  int _healthyScansCount = 0;
-  int _diseasedScansCount = 0;
   // Dismiss state for completion rate warning animation/icon
   bool _completionWarningDismissed = false;
 
@@ -503,65 +503,6 @@ class _ReportsState extends State<Reports> {
             ? '—'
             : '${((scansSubmittedAndCompletedInPeriod / totalScansCount) * 100).toStringAsFixed(0)}%';
 
-    // 3. Healthy Rate - calculate from disease stats in the time window
-    // Use createdAt (when disease occurred) for accurate disease timing
-    int healthyScans = 0;
-    int diseaseScans = 0;
-    for (final r in scanRequests) {
-      final status = (r['status'] ?? '').toString();
-      if (status != 'completed') continue;
-
-      final createdAtRaw = r['createdAt'];
-      DateTime? createdAt;
-      if (createdAtRaw is Timestamp) createdAt = createdAtRaw.toDate();
-      if (createdAtRaw is String) createdAt = DateTime.tryParse(createdAtRaw);
-
-      if (createdAt != null) {
-        final inWindow =
-            _selectedTimeRange == '1 Day'
-                ? createdAt.isAfter(startInclusive)
-                : (!createdAt.isBefore(startInclusive) &&
-                    createdAt.isBefore(endExclusive));
-
-        if (inWindow) {
-          final List<dynamic> diseaseSummary =
-              (r['diseaseSummary'] as List<dynamic>?) ?? [];
-          if (diseaseSummary.isEmpty) {
-            healthyScans++;
-          } else {
-            // Check if it contains disease detections (excluding tip burn)
-            bool hasDisease = false;
-            for (final d in diseaseSummary) {
-              String name = 'Unknown';
-              if (d is Map<String, dynamic>) {
-                name = d['name'] ?? d['label'] ?? d['disease'] ?? 'Unknown';
-              } else if (d is String) {
-                name = d;
-              }
-              final lower = name.toLowerCase();
-              if (!lower.contains('tip burn') &&
-                  !lower.contains('unknown') &&
-                  lower != 'healthy') {
-                hasDisease = true;
-                break;
-              }
-              if (lower == 'healthy') {
-                healthyScans++;
-                break;
-              }
-            }
-            if (hasDisease) diseaseScans++;
-          }
-        }
-      }
-    }
-
-    final int totalHealthyCheck = healthyScans + diseaseScans;
-    final String healthyRateStr =
-        totalHealthyCheck == 0
-            ? '—'
-            : '${((healthyScans / totalHealthyCheck) * 100).toStringAsFixed(1)}%';
-
     // debug log removed
     setState(() {
       _stats['totalReportsReviewed'] = completedInWindow;
@@ -577,9 +518,6 @@ class _ReportsState extends State<Reports> {
       _totalScansSubmitted = totalScansCount;
       _scansCompletedFromPeriod =
           completedByCreated; // Lifetime completion (for modal)
-      _healthyRate = healthyRateStr;
-      _healthyScansCount = healthyScans;
-      _diseasedScansCount = diseaseScans;
     });
 
     // Temperature is loaded ONCE in _initializeData only
@@ -1234,13 +1172,6 @@ class _ReportsState extends State<Reports> {
                       Icons.upload_file,
                       Colors.blue,
                       onTap: () => _showTotalScansSubmittedModal(context),
-                    ),
-                    _buildStatCard(
-                      'Healthy Rate',
-                      _healthyRate,
-                      Icons.verified,
-                      Colors.lightGreen,
-                      onTap: () => _showHealthyRateModal(context),
                     ),
                     _buildStatCard(
                       'Completion Rate',
@@ -3177,263 +3108,6 @@ class _ReportsState extends State<Reports> {
     );
   }
 
-  void _showHealthyRateModal(BuildContext context) {
-    showDialog(
-      context: context,
-      builder: (context) {
-        return Dialog(
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
-          ),
-          child: ConstrainedBox(
-            constraints: BoxConstraints(
-              maxWidth: 600,
-              maxHeight: MediaQuery.of(context).size.height * 0.85,
-            ),
-            child: Container(
-              width:
-                  MediaQuery.of(context).size.width > 700
-                      ? 600
-                      : MediaQuery.of(context).size.width * 0.9,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  // Fixed header with close button
-                  Container(
-                    padding: const EdgeInsets.fromLTRB(24, 24, 24, 16),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        const Expanded(
-                          child: Text(
-                            'Healthy Rate',
-                            style: TextStyle(
-                              fontSize: 22,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                        ),
-                        IconButton(
-                          icon: const Icon(Icons.close),
-                          onPressed: () => Navigator.pop(context),
-                          tooltip: 'Close',
-                        ),
-                      ],
-                    ),
-                  ),
-                  // Scrollable content
-                  Expanded(
-                    child: SingleChildScrollView(
-                      padding: const EdgeInsets.all(24),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text(
-                            'What does this show?',
-                            style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.lightGreen,
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          Text(
-                            'Percentage of reviewed scans that came back as healthy (no disease detected).',
-                            style: TextStyle(
-                              fontSize: 14,
-                              color: Colors.grey[700],
-                            ),
-                          ),
-                          const SizedBox(height: 16),
-                          const Text(
-                            'Calculation Details',
-                            style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.lightGreen,
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          Container(
-                            padding: const EdgeInsets.all(16),
-                            decoration: BoxDecoration(
-                              color: Colors.green.shade50,
-                              borderRadius: BorderRadius.circular(8),
-                              border: Border.all(color: Colors.green.shade200),
-                            ),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Row(
-                                  mainAxisAlignment:
-                                      MainAxisAlignment.spaceBetween,
-                                  children: [
-                                    Text(
-                                      'Healthy Rate:',
-                                      style: TextStyle(
-                                        fontSize: 14,
-                                        color: Colors.grey[700],
-                                      ),
-                                    ),
-                                    Text(
-                                      _healthyRate,
-                                      style: TextStyle(
-                                        fontSize: 18,
-                                        fontWeight: FontWeight.bold,
-                                        color: Colors.green.shade900,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                                const SizedBox(height: 12),
-                                Divider(color: Colors.green.shade300),
-                                const SizedBox(height: 12),
-                                Text(
-                                  'Breakdown:',
-                                  style: TextStyle(
-                                    fontSize: 13,
-                                    fontWeight: FontWeight.bold,
-                                    color: Colors.green.shade800,
-                                  ),
-                                ),
-                                const SizedBox(height: 8),
-                                _buildDetailRow(
-                                  'Healthy Scans:',
-                                  '$_healthyScansCount',
-                                ),
-                                _buildDetailRow(
-                                  'Diseased Scans:',
-                                  '$_diseasedScansCount',
-                                ),
-                                const SizedBox(height: 4),
-                                Divider(color: Colors.green.shade200),
-                                const SizedBox(height: 4),
-                                _buildDetailRow(
-                                  'Total Reviewed:',
-                                  '${_healthyScansCount + _diseasedScansCount}',
-                                ),
-                                const SizedBox(height: 12),
-                                Container(
-                                  padding: const EdgeInsets.all(8),
-                                  decoration: BoxDecoration(
-                                    color: Colors.white,
-                                    borderRadius: BorderRadius.circular(6),
-                                    border: Border.all(
-                                      color: Colors.green.shade300,
-                                    ),
-                                  ),
-                                  child: Text(
-                                    'Formula: ($_healthyScansCount ÷ ${_healthyScansCount + _diseasedScansCount}) × 100% = $_healthyRate',
-                                    style: TextStyle(
-                                      fontSize: 12,
-                                      color: Colors.green.shade900,
-                                      fontFamily: 'monospace',
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                          const SizedBox(height: 16),
-                          const Text(
-                            'Data Filters',
-                            style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.lightGreen,
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          Container(
-                            padding: const EdgeInsets.all(16),
-                            decoration: BoxDecoration(
-                              color: Colors.grey.shade100,
-                              borderRadius: BorderRadius.circular(8),
-                              border: Border.all(color: Colors.grey.shade300),
-                            ),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                _buildDetailRow(
-                                  'Time Range:',
-                                  _displayRangeLabel(_selectedTimeRange),
-                                ),
-                                _buildDetailRow(
-                                  'Filters by:',
-                                  'When review was completed',
-                                ),
-                                _buildDetailRow(
-                                  'Status:',
-                                  'Completed scans only',
-                                ),
-                                const SizedBox(height: 12),
-                                Text(
-                                  'Excluded:',
-                                  style: TextStyle(
-                                    fontSize: 13,
-                                    fontWeight: FontWeight.bold,
-                                    color: Colors.grey[700],
-                                  ),
-                                ),
-                                const SizedBox(height: 4),
-                                Text(
-                                  '• Tip Burn/Unknown (not considered a disease)\n'
-                                  '• Pending/unreviewed scans',
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    color: Colors.grey[600],
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                          const SizedBox(height: 16),
-                          const Text(
-                            'Interpreting the results:',
-                            style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.lightGreen,
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          _buildHealthIndicator(
-                            '80-100%',
-                            'Excellent field health',
-                            Colors.green,
-                          ),
-                          const SizedBox(height: 4),
-                          _buildHealthIndicator(
-                            '50-79%',
-                            'Moderate disease presence',
-                            Colors.orange,
-                          ),
-                          const SizedBox(height: 4),
-                          _buildHealthIndicator(
-                            '0-49%',
-                            'High disease pressure',
-                            Colors.red,
-                          ),
-                          const SizedBox(height: 16),
-                          _buildInsightBox(
-                            'Insight',
-                            _getHealthyRateInsight(),
-                            Icons.eco_outlined,
-                            Colors.green,
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        );
-      },
-    );
-  }
-
   Widget _buildHealthIndicator(String range, String label, Color color) {
     return Row(
       children: [
@@ -3557,26 +3231,6 @@ class _ReportsState extends State<Reports> {
       return 'Moderate gap of $gap scans (${gapPercentage.toStringAsFixed(0)}%). Some reports may still be in review. Monitor the "Avg. Response Time" to ensure timely processing.';
     } else {
       return 'Small gap of $gap scans (${gapPercentage.toStringAsFixed(0)}%). This is normal as some scans may have been reviewed just outside the time window or are newly submitted.';
-    }
-  }
-
-  String _getHealthyRateInsight() {
-    final total = _healthyScansCount + _diseasedScansCount;
-
-    if (total == 0) {
-      return 'No data available for this period. Ensure scans are being submitted and reviewed.';
-    }
-
-    final rate = (_healthyScansCount / total) * 100;
-
-    if (rate >= 80) {
-      return 'Excellent field health! ${rate.toStringAsFixed(1)}% healthy rate indicates minimal disease pressure. Continue current management practices and monitor for any changes.';
-    } else if (rate >= 50) {
-      return 'Moderate disease presence at ${rate.toStringAsFixed(1)}% healthy. Review the Disease Distribution chart to identify primary threats. Consider targeted interventions for affected areas.';
-    } else if (rate >= 30) {
-      return 'Elevated disease pressure detected (${rate.toStringAsFixed(1)}% healthy). Check Disease Trends for patterns. Immediate attention may be needed for disease management.';
-    } else {
-      return 'Critical: High disease pressure with only ${rate.toStringAsFixed(1)}% healthy scans. Review Disease Distribution urgently and consider implementing comprehensive treatment interventions.';
     }
   }
 
@@ -4417,39 +4071,7 @@ class _ReportsListTableState extends State<ReportsListTable>
                                                       const SizedBox(
                                                         height: 16,
                                                       ),
-                                                      if (report['image'] !=
-                                                          null)
-                                                        Container(
-                                                          height: 180,
-                                                          width: 180,
-                                                          color:
-                                                              Colors.grey[200],
-                                                          child: Image.network(
-                                                            report['image']
-                                                                .toString(),
-                                                            fit: BoxFit.cover,
-                                                            filterQuality:
-                                                                FilterQuality
-                                                                    .low,
-                                                            gaplessPlayback:
-                                                                true,
-                                                            // Hint to decoder to downscale to container size
-                                                            cacheWidth: 360,
-                                                            cacheHeight: 360,
-                                                          ),
-                                                        )
-                                                      else
-                                                        Container(
-                                                          height: 180,
-                                                          width: 180,
-                                                          color:
-                                                              Colors.grey[200],
-                                                          child: const Center(
-                                                            child: Text(
-                                                              'No Image',
-                                                            ),
-                                                          ),
-                                                        ),
+                                                      _buildReportImage(report),
                                                       const SizedBox(
                                                         height: 16,
                                                       ),
@@ -4517,6 +4139,659 @@ class _ReportsListTableState extends State<ReportsListTable>
       return first.toString();
     }
     return '-';
+  }
+
+  // Resolve image URL from various formats (string, map, Firebase Storage path)
+  // Handles folder name changes by trying multiple possible paths
+  Future<String> _resolveImageUrl(dynamic imageData) async {
+    String candidate = '';
+    String storagePath = '';
+
+    if (imageData is String) {
+      candidate = imageData.trim();
+    } else if (imageData is Map<String, dynamic>) {
+      final dynamic sp = imageData['storagePath'] ?? imageData['path'];
+      if (sp is String && sp.trim().isNotEmpty) {
+        storagePath = sp.trim();
+      }
+      final dynamic url =
+          imageData['url'] ??
+          imageData['imageUrl'] ??
+          imageData['image'] ??
+          imageData['src'] ??
+          imageData['link'] ??
+          imageData['downloadURL'] ??
+          imageData['storageURL'] ??
+          '';
+      candidate = url.toString().trim();
+    } else if (imageData != null) {
+      candidate = imageData.toString().trim();
+    }
+
+    candidate = candidate.replaceAll('\n', '').replaceAll('\r', '').trim();
+    if (candidate.isEmpty && storagePath.isEmpty) return '';
+
+    final bool isHttp =
+        candidate.startsWith('http://') || candidate.startsWith('https://');
+    if (isHttp) {
+      // If it's a full URL, try to regenerate from storage path if it fails
+      // Extract storage path from URL and regenerate download URL
+      final storagePath = _extractStoragePathFromUrl(candidate);
+      if (storagePath.isNotEmpty) {
+        try {
+          // Try to get fresh download URL from storage path
+          final ref = FirebaseStorage.instance.ref(storagePath);
+          final freshUrl = await ref.getDownloadURL();
+          return freshUrl;
+        } catch (e) {
+          // If that fails, try alternative folder names
+          return await _tryRegenerateUrlWithAlternatives(
+            candidate,
+            storagePath,
+          );
+        }
+      }
+      // If we can't extract path, return original (will try alternatives in widget)
+      return _fixImageUrlPath(candidate);
+    }
+
+    try {
+      if (candidate.startsWith('gs://')) {
+        final ref = FirebaseStorage.instance.refFromURL(candidate);
+        return await ref.getDownloadURL();
+      }
+      final String pathToUse = storagePath.isNotEmpty ? storagePath : candidate;
+      // Try multiple possible folder names
+      return await _tryMultipleStoragePaths(pathToUse);
+    } catch (e) {
+      // Fallback to original; Image.network will handle error
+      return candidate.isNotEmpty ? candidate : storagePath;
+    }
+  }
+
+  // Extract storage path from Firebase Storage download URL
+  String _extractStoragePathFromUrl(String url) {
+    try {
+      final uri = Uri.parse(url);
+      final pathSegments = uri.pathSegments;
+
+      // URL format: /v0/b/bucket/o/folder%2Ffilename.jpg
+      if (pathSegments.length >= 2 &&
+          pathSegments[pathSegments.length - 2] == 'o') {
+        final encodedPath = pathSegments.last;
+        final decodedPath = Uri.decodeComponent(encodedPath);
+        return decodedPath;
+      }
+    } catch (e) {
+      // If parsing fails, try to extract manually
+      final match = RegExp(r'/o/([^?]+)').firstMatch(url);
+      if (match != null) {
+        return Uri.decodeComponent(match.group(1)!);
+      }
+    }
+    return '';
+  }
+
+  // Try to regenerate URL with alternative folder names
+  Future<String> _tryRegenerateUrlWithAlternatives(
+    String originalUrl,
+    String originalPath,
+  ) async {
+    final possibleFolders = [
+      'diseases',
+      'scan_images',
+      'scanImages',
+      'images',
+      'uploads',
+      'user_images',
+      'userImages',
+    ];
+
+    // Extract filename from path
+    final pathParts = originalPath.split('/');
+    final filename = pathParts.isNotEmpty ? pathParts.last : originalPath;
+
+    // Try each folder name
+    for (final folder in possibleFolders) {
+      try {
+        final testPath = '$folder/$filename';
+        final ref = FirebaseStorage.instance.ref(testPath);
+        final url = await ref.getDownloadURL();
+        return url;
+      } catch (e) {
+        // Try next folder
+        continue;
+      }
+    }
+
+    // If all fail, return original URL
+    return originalUrl;
+  }
+
+  // Fix image URL path if folder name changed
+  // Tries to replace old folder names with new folder name
+  // Also handles reverse: if diseases folder fails, tries other folders
+  String _fixImageUrlPath(String url) {
+    // List of possible old folder names to try
+    final oldFolders = [
+      'scan_images',
+      'scanImages',
+      'images',
+      'uploads',
+      'user_images',
+      'userImages',
+    ];
+
+    // Current folder name (update this if you know the new folder name)
+    final newFolder = 'diseases';
+
+    // Check if URL contains any old folder name
+    for (final oldFolder in oldFolders) {
+      if (url.contains('/$oldFolder/') || url.contains('%2F$oldFolder%2F')) {
+        // Replace old folder with new folder
+        url = url.replaceAll('/$oldFolder/', '/$newFolder/');
+        url = url.replaceAll('%2F$oldFolder%2F', '%2F$newFolder%2F');
+        break;
+      }
+    }
+
+    // If URL already has 'diseases' but might need to try other folders,
+    // we'll handle that in the error case by trying alternative paths
+    return url;
+  }
+
+  // Generate alternative URLs with different folder names
+  List<String> _generateAlternativeUrls(String originalUrl) {
+    final alternatives = <String>[];
+    final possibleFolders = [
+      'scan_images', // Try these if diseases fails
+      'scanImages',
+      'images',
+      'uploads',
+      'user_images',
+      'userImages',
+      'scan_requests',
+      'requests',
+    ];
+
+    // Extract filename from URL
+    try {
+      final uri = Uri.parse(originalUrl);
+      final pathSegments = uri.pathSegments;
+
+      // Find the folder and filename in the path
+      // URL format: /v0/b/bucket/o/folder%2Ffilename.jpg
+      if (pathSegments.length >= 2 &&
+          pathSegments[pathSegments.length - 2] == 'o') {
+        final encodedPath = pathSegments.last;
+        final decodedPath = Uri.decodeComponent(encodedPath);
+        final parts = decodedPath.split('/');
+
+        if (parts.length >= 2) {
+          final filename = parts.last;
+
+          // Try each folder name
+          for (final folder in possibleFolders) {
+            // Skip if it's the same as current folder
+            if (parts[0] == folder) continue;
+
+            // Create new URL with different folder
+            final newEncodedPath = Uri.encodeComponent('$folder/$filename');
+            final newPathSegments = List<String>.from(pathSegments);
+            newPathSegments[newPathSegments.length - 1] = newEncodedPath;
+
+            final newUri = uri.replace(pathSegments: newPathSegments);
+            alternatives.add(newUri.toString());
+          }
+        }
+      }
+    } catch (e) {
+      // If parsing fails, try simple string replacement
+      final possibleFolders = [
+        'scan_images',
+        'scanImages',
+        'images',
+        'uploads',
+        'user_images',
+        'userImages',
+      ];
+
+      for (final folder in possibleFolders) {
+        // Replace diseases with other folder names
+        final newUrl = originalUrl.replaceAll('diseases%2F', '$folder%2F');
+        if (newUrl != originalUrl) {
+          alternatives.add(newUrl);
+        }
+      }
+    }
+
+    return alternatives;
+  }
+
+  // Try multiple storage paths if the first one fails
+  Future<String> _tryMultipleStoragePaths(String path) async {
+    // List of possible folder names to try
+    final possibleFolders = [
+      'diseases', // Current folder name
+      'scan_images',
+      'scanImages',
+      'images',
+      'uploads',
+      'user_images',
+      'userImages',
+    ];
+
+    // Extract filename from path
+    final pathParts = path.split('/');
+    final filename = pathParts.isNotEmpty ? pathParts.last : path;
+
+    // Try each folder name
+    for (final folder in possibleFolders) {
+      try {
+        final testPath = '$folder/$filename';
+        final ref = FirebaseStorage.instance.ref(testPath);
+        final url = await ref.getDownloadURL();
+        return url;
+      } catch (e) {
+        // Try next folder
+        continue;
+      }
+    }
+
+    // If all folders fail, try the original path
+    try {
+      final ref = FirebaseStorage.instance.ref(path);
+      return await ref.getDownloadURL();
+    } catch (e) {
+      // Return original path as fallback
+      return path;
+    }
+  }
+
+  // Get the first image from report (handles both 'image' and 'images' fields)
+  dynamic _getFirstImage(Map<String, dynamic> report) {
+    // Try 'image' field first
+    if (report['image'] != null) {
+      return report['image'];
+    }
+    // Try 'images' array
+    final images = report['images'];
+    if (images is List && images.isNotEmpty) {
+      return images.first;
+    }
+    return null;
+  }
+
+  // Build image widget with error handling and click to view full size
+  Widget _buildReportImage(Map<String, dynamic> report) {
+    final imageData = _getFirstImage(report);
+
+    if (imageData == null) {
+      return Container(
+        height: 180,
+        width: 180,
+        color: Colors.grey[200],
+        child: const Center(
+          child: Text('No Image', style: TextStyle(color: Colors.grey)),
+        ),
+      );
+    }
+
+    return FutureBuilder<String>(
+      future: resolveStorageImageUrl(imageData),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return Container(
+            height: 180,
+            width: 180,
+            color: Colors.grey[200],
+            child: const Center(child: CircularProgressIndicator()),
+          );
+        }
+
+        final imageUrl = snapshot.data ?? '';
+        if (imageUrl.isEmpty) {
+          return Container(
+            height: 180,
+            width: 180,
+            color: Colors.grey[200],
+            child: const Center(
+              child: Text('No Image', style: TextStyle(color: Colors.grey)),
+            ),
+          );
+        }
+
+        return GestureDetector(
+          onTap: () => _showImageDialog(context, imageUrl),
+          child: Container(
+            height: 180,
+            width: 180,
+            decoration: BoxDecoration(
+              color: Colors.grey[200],
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: Colors.grey[300]!),
+            ),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(8),
+              child:
+                  kIsWeb
+                      ? _buildWebImageWidget(imageUrl)
+                      : Image.network(
+                        imageUrl,
+                        fit: BoxFit.cover,
+                        errorBuilder: (context, error, stackTrace) {
+                          return Container(
+                            color: Colors.grey[200],
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                const Icon(
+                                  Icons.image_not_supported,
+                                  size: 50,
+                                  color: Colors.grey,
+                                ),
+                                const SizedBox(height: 8),
+                                const Text(
+                                  'Image Error',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: Colors.grey,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          );
+                        },
+                      ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  // Build image widget for web using HTML img element to bypass CORS
+  Widget _buildWebImageWidget(String imageUrl) {
+    return Image.network(
+      imageUrl,
+      fit: BoxFit.cover,
+      headers: const {'Access-Control-Allow-Origin': '*'},
+      errorBuilder: (context, error, stackTrace) {
+        return Container(
+          color: Colors.grey[200],
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Icon(
+                Icons.image_not_supported,
+                size: 50,
+                color: Colors.grey,
+              ),
+              const SizedBox(height: 8),
+              const Text(
+                'Image Error',
+                style: TextStyle(fontSize: 12, color: Colors.grey),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  // Show full-size image dialog
+  void _showImageDialog(BuildContext context, String imageUrl) {
+    showDialog(
+      context: context,
+      builder:
+          (context) => Dialog(
+            backgroundColor: Colors.transparent,
+            insetPadding: const EdgeInsets.all(20),
+            child: Stack(
+              children: [
+                Center(
+                  child: InteractiveViewer(
+                    minScale: 0.5,
+                    maxScale: 4.0,
+                    child: Image.network(
+                      imageUrl,
+                      fit: BoxFit.contain,
+                      errorBuilder: (context, error, stackTrace) {
+                        return Container(
+                          width: 400,
+                          height: 400,
+                          color: Colors.grey[800],
+                          child: const Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(
+                                Icons.error_outline,
+                                size: 64,
+                                color: Colors.white,
+                              ),
+                              SizedBox(height: 16),
+                              Text(
+                                'Failed to load image',
+                                style: TextStyle(color: Colors.white),
+                              ),
+                            ],
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                ),
+                Positioned(
+                  top: 10,
+                  right: 10,
+                  child: IconButton(
+                    icon: const Icon(Icons.close, color: Colors.white),
+                    onPressed: () => Navigator.of(context).pop(),
+                    style: IconButton.styleFrom(
+                      backgroundColor: Colors.black54,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+    );
+  }
+}
+
+// Stateful widget to handle URL fallback logic
+class _NetworkImageFallbackStateful extends StatefulWidget {
+  final List<String> urls;
+
+  const _NetworkImageFallbackStateful({required this.urls});
+
+  @override
+  State<_NetworkImageFallbackStateful> createState() =>
+      _NetworkImageFallbackStatefulState();
+}
+
+class _NetworkImageFallbackStatefulState
+    extends State<_NetworkImageFallbackStateful> {
+  int _currentUrlIndex = 0;
+  bool _hasError = false;
+
+  // Build image for web platform to handle CORS issues
+  // Uses Image.network but with better error handling for web
+  Widget _buildWebImage(String url) {
+    return Image.network(
+      url,
+      fit: BoxFit.cover,
+      filterQuality: FilterQuality.low,
+      gaplessPlayback: true,
+      cacheWidth: 360,
+      cacheHeight: 360,
+      loadingBuilder: (context, child, loadingProgress) {
+        if (loadingProgress == null) return child;
+        return Container(
+          color: Colors.grey[200],
+          child: Center(
+            child: CircularProgressIndicator(
+              value:
+                  loadingProgress.expectedTotalBytes != null
+                      ? loadingProgress.cumulativeBytesLoaded /
+                          loadingProgress.expectedTotalBytes!
+                      : null,
+            ),
+          ),
+        );
+      },
+      errorBuilder: (context, error, stackTrace) {
+        // Try next URL if available
+        if (_currentUrlIndex < widget.urls.length - 1) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) {
+              setState(() {
+                _currentUrlIndex++;
+              });
+            }
+          });
+          return Container(
+            color: Colors.grey[200],
+            child: const Center(child: CircularProgressIndicator()),
+          );
+        }
+
+        // All URLs failed
+        if (mounted) {
+          setState(() {
+            _hasError = true;
+          });
+        }
+
+        return Container(
+          color: Colors.grey[200],
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Icon(
+                Icons.image_not_supported,
+                size: 50,
+                color: Colors.grey,
+              ),
+              const SizedBox(height: 8),
+              const Text(
+                'Image Error',
+                style: TextStyle(fontSize: 12, color: Colors.grey),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                'Tap to retry',
+                style: TextStyle(fontSize: 10, color: Colors.grey[600]),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_currentUrlIndex >= widget.urls.length || _hasError) {
+      return Container(
+        color: Colors.grey[200],
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(Icons.image_not_supported, size: 50, color: Colors.grey),
+            const SizedBox(height: 8),
+            const Text(
+              'Image Error',
+              style: TextStyle(fontSize: 12, color: Colors.grey),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'Tap to retry',
+              style: TextStyle(fontSize: 10, color: Colors.grey[600]),
+            ),
+          ],
+        ),
+      );
+    }
+
+    final currentUrl = widget.urls[_currentUrlIndex];
+
+    // For Flutter web, use a workaround for CORS issues
+    if (kIsWeb) {
+      return _buildWebImage(currentUrl);
+    }
+
+    return Image.network(
+      currentUrl,
+      fit: BoxFit.cover,
+      filterQuality: FilterQuality.low,
+      gaplessPlayback: true,
+      cacheWidth: 360,
+      cacheHeight: 360,
+      loadingBuilder: (context, child, loadingProgress) {
+        if (loadingProgress == null) return child;
+        return Container(
+          color: Colors.grey[200],
+          child: Center(
+            child: CircularProgressIndicator(
+              value:
+                  loadingProgress.expectedTotalBytes != null
+                      ? loadingProgress.cumulativeBytesLoaded /
+                          loadingProgress.expectedTotalBytes!
+                      : null,
+            ),
+          ),
+        );
+      },
+      errorBuilder: (context, error, stackTrace) {
+        // Try next URL if available
+        if (_currentUrlIndex < widget.urls.length - 1) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) {
+              setState(() {
+                _currentUrlIndex++;
+              });
+            }
+          });
+          // Return loading indicator while trying next URL
+          return Container(
+            color: Colors.grey[200],
+            child: const Center(child: CircularProgressIndicator()),
+          );
+        }
+
+        // All URLs failed
+        if (mounted) {
+          setState(() {
+            _hasError = true;
+          });
+        }
+
+        return Container(
+          color: Colors.grey[200],
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Icon(
+                Icons.image_not_supported,
+                size: 50,
+                color: Colors.grey,
+              ),
+              const SizedBox(height: 8),
+              const Text(
+                'Image Error',
+                style: TextStyle(fontSize: 12, color: Colors.grey),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                'Tap to retry',
+                style: TextStyle(fontSize: 10, color: Colors.grey[600]),
+              ),
+            ],
+          ),
+        );
+      },
+    );
   }
 }
 
@@ -5229,7 +5504,7 @@ class _DiseaseDistributionChartState extends State<DiseaseDistributionChart> {
 
     diseaseToCount.forEach((name, count) {
       result.add({
-        'name': name,
+        'name': _getDiseaseDisplayName(name),
         'count': count,
         'percentage': total == 0 ? 0.0 : count / total,
         'type': 'disease',
@@ -5248,6 +5523,74 @@ class _DiseaseDistributionChartState extends State<DiseaseDistributionChart> {
 
   // Removed old getters; we snapshot build-scoped lists instead to avoid hover flicker
 
+  /// Normalizes disease names to their display names
+  String _getDiseaseDisplayName(String disease) {
+    // Normalize common separators and whitespace
+    final normalized =
+        disease
+            .toLowerCase()
+            .replaceAll(RegExp(r'[_\-]+'), ' ')
+            .replaceAll(RegExp(r'\s+'), ' ')
+            .trim();
+
+    // Map model labels and variations to display names
+    switch (normalized) {
+      case 'healthy':
+        return 'Healthy';
+
+      case 'bacterial erysipelas':
+      case 'infected bacterial erysipelas':
+        return 'Bacterial Erysipelas';
+
+      case 'greasy pig disease':
+      case 'infected bacterial greasy':
+      case 'bacterial greasy':
+        return 'Greasy Pig Disease';
+
+      case 'sunburn':
+      case 'infected environmental sunburn':
+      case 'environmental sunburn':
+        return 'Sunburn';
+
+      case 'ringworm':
+      case 'infected fungal ringworm':
+      case 'fungal ringworm':
+        return 'Ringworm';
+
+      case 'mange':
+      case 'infected parasitic mange':
+      case 'parasitic mange':
+        return 'Mange';
+
+      case 'foot and mouth disease':
+      case 'foot-and-mouth disease':
+      case 'infected viral foot and mouth':
+      case 'infected viral foot and mouth disease':
+        return 'Foot-and-Mouth Disease';
+
+      case 'swine pox':
+      case 'swinepox':
+        return 'Swine Pox';
+
+      case 'unknown':
+      case 'tip burn':
+      case 'tip_burn':
+        return 'Unknown';
+
+      default:
+        // Capitalize first letter of each word for unknown diseases
+        return disease
+            .split(' ')
+            .map(
+              (word) =>
+                  word.isEmpty
+                      ? ''
+                      : word[0].toUpperCase() + word.substring(1).toLowerCase(),
+            )
+            .join(' ');
+    }
+  }
+
   Color _getDiseaseColor(String disease) {
     // Normalize common separators and whitespace
     final normalized =
@@ -5256,22 +5599,65 @@ class _DiseaseDistributionChartState extends State<DiseaseDistributionChart> {
             .replaceAll(RegExp(r'[_\-]+'), ' ')
             .replaceAll(RegExp(r'\s+'), ' ')
             .trim();
+
+    // Handle display names and model labels
     switch (normalized) {
-      case 'anthracnose':
-        return Colors.orange;
-      case 'bacterial blackspot':
-      case 'bacterial black spot':
-        return Colors.purple;
-      case 'powdery mildew':
-        return const Color.fromARGB(255, 9, 46, 2);
-      case 'dieback':
-        return Colors.red;
+      // Healthy — Blue (#1E88E5)
+      case 'healthy':
+        return const Color(0xFF1E88E5);
+
+      // Bacterial Erysipelas — Red (#E53935)
+      // Model label: infected_bacterial_erysipelas
+      case 'bacterial erysipelas':
+      case 'infected bacterial erysipelas':
+        return const Color(0xFFE53935);
+
+      // Greasy Pig Disease — Orange (#FB8C00)
+      // Model label: infected_bacterial_greasy
+      case 'greasy pig disease':
+      case 'infected bacterial greasy':
+      case 'bacterial greasy':
+        return const Color(0xFFFB8C00);
+
+      // Sunburn — Yellow (#FDD835)
+      // Model label: infected_environmental_sunburn
+      case 'sunburn':
+      case 'infected environmental sunburn':
+      case 'environmental sunburn':
+        return const Color(0xFFFDD835);
+
+      // Ringworm — Purple (#8E24AA)
+      // Model label: infected_fungal_ringworm
+      case 'ringworm':
+      case 'infected fungal ringworm':
+      case 'fungal ringworm':
+        return const Color(0xFF8E24AA);
+
+      // Mange — Brown (#6D4C41)
+      // Model label: infected_parasitic_mange
+      case 'mange':
+      case 'infected parasitic mange':
+      case 'parasitic mange':
+        return const Color(0xFF6D4C41);
+
+      // Foot-and-Mouth Disease — Pink (#D81B60)
+      // Model label: infected_viral_foot_and_mouth
+      case 'foot and mouth disease':
+      case 'foot-and-mouth disease':
+      case 'infected viral foot and mouth':
+      case 'infected viral foot and mouth disease':
+        return const Color(0xFFD81B60);
+
+      // Swine Pox — Green (#43A047)
+      // Model label: swine_pox
+      case 'swine pox':
+      case 'swinepox':
+        return const Color(0xFF43A047);
+
+      // Unknown — Grey (fallback)
+      case 'unknown':
       case 'tip burn':
       case 'tip_burn':
-      case 'unknown':
-        return Colors.amber;
-      case 'healthy':
-        return const Color.fromARGB(255, 2, 119, 252);
       default:
         return Colors.grey;
     }

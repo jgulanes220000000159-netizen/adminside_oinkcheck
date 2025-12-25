@@ -73,7 +73,7 @@ exports.notifyAdminOnUserRegister = onDocumentCreated(
 
     const from = `"MangoSense Notifications" <${gmailEmail}>`;
     const subject = "New user registration received";
-    const adminUrl = "https://mango-leaf-analyzer.web.app/";
+    const adminUrl = "https://oinkcheck-d07df.web.app/";
 
     const userName = newUser.fullName || newUser.name || "";
     const userEmail = newUser.email || "";

@@ -759,11 +759,11 @@ class _AdminDashboardState extends State<AdminDashboard>
                                       ),
                                       children: [
                                         TextSpan(
-                                          text: 'Mango',
+                                          text: 'Oink',
                                           style: TextStyle(color: Colors.white),
                                         ),
                                         TextSpan(
-                                          text: 'Sense',
+                                          text: 'Check',
                                           style: TextStyle(
                                             color: Color.fromARGB(
                                               255,

@@ -148,10 +148,15 @@ class _UserManagementState extends State<UserManagement> {
               matchesFilter =
                   user['status'].toLowerCase() == _selectedFilter.toLowerCase();
             } else if (_selectedFilter == 'Expert' ||
-                _selectedFilter == 'Farmer') {
+                _selectedFilter == 'Farmer' ||
+                _selectedFilter == 'Machine Learning Expert' ||
+                _selectedFilter == 'Head Veterinarian') {
               // Filter by role
-              matchesFilter =
-                  user['role'].toLowerCase() == _selectedFilter.toLowerCase();
+              final filterRole = _selectedFilter.toLowerCase().replaceAll(
+                ' ',
+                '_',
+              );
+              matchesFilter = user['role'].toLowerCase() == filterRole;
             }
 
             return matchesSearch && matchesFilter;
@@ -177,7 +182,12 @@ class _UserManagementState extends State<UserManagement> {
         (user['profileImage'] as String? ?? '').trim();
 
     // Create a list of all possible roles, including the current user's role
-    final allRoles = ['expert', 'farmer'];
+    final allRoles = [
+      'expert',
+      'farmer',
+      'machine_learning_expert',
+      'head_veterinarian',
+    ];
     if (!allRoles.contains(selectedRole)) {
       allRoles.add(selectedRole);
     }
@@ -406,7 +416,7 @@ class _UserManagementState extends State<UserManagement> {
                                       .map(
                                         (role) => DropdownMenuItem(
                                           value: role,
-                                          child: Text(role.toUpperCase()),
+                                          child: Text(_formatRoleName(role)),
                                         ),
                                       )
                                       .toList(),
@@ -475,7 +485,10 @@ class _UserManagementState extends State<UserManagement> {
                                                 addressController.text.trim(),
                                           ),
                                         Text('Status: ' + selectedStatus),
-                                        Text('Role: ' + selectedRole),
+                                        Text(
+                                          'Role: ' +
+                                              _formatRoleName(selectedRole),
+                                        ),
                                       ],
                                     ),
                                     actions: [
@@ -741,7 +754,15 @@ class _UserManagementState extends State<UserManagement> {
               DropdownButton<String>(
                 value: _selectedFilter,
                 items:
-                    ['All', 'Pending', 'Active', 'Expert', 'Farmer']
+                    [
+                          'All',
+                          'Pending',
+                          'Active',
+                          'Expert',
+                          'Farmer',
+                          'Machine Learning Expert',
+                          'Head Veterinarian',
+                        ]
                         .map(
                           (status) => DropdownMenuItem(
                             value: status,
@@ -889,7 +910,7 @@ class _UserManagementState extends State<UserManagement> {
                                               ),
                                               DataCell(
                                                 Text(
-                                                  user['role'].toUpperCase(),
+                                                  _formatRoleName(user['role']),
                                                   style: TextStyle(
                                                     color: _getRoleColor(
                                                       user['role'],
@@ -1249,12 +1270,21 @@ class _UserManagementState extends State<UserManagement> {
     }
   }
 
+  // Format role name for display (replace underscores with spaces, uppercase)
+  String _formatRoleName(String role) {
+    return role.replaceAll('_', ' ').toUpperCase();
+  }
+
   Color _getRoleColor(String role) {
     switch (role.toLowerCase()) {
       case 'expert':
         return const Color.fromARGB(255, 31, 3, 133); // violet
       case 'farmer':
-        return const Color.fromARGB(255, 255, 0, 0);
+        return const Color.fromARGB(255, 255, 0, 0); // red
+      case 'machine_learning_expert':
+        return const Color(0xFF9C27B0); // purple
+      case 'head_veterinarian':
+        return const Color(0xFF2196F3); // blue
       default:
         return Colors.grey;
     }
