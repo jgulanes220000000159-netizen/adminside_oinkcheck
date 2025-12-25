@@ -1,0 +1,989 @@
+import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import '../models/user_store.dart';
+import 'package:provider/provider.dart';
+import '../screens/admin_dashboard.dart';
+
+class PendingApprovalsCard extends StatefulWidget {
+  final int? pendingCount;
+  final VoidCallback? onTap;
+  const PendingApprovalsCard({Key? key, this.pendingCount, this.onTap})
+    : super(key: key);
+
+  @override
+  State<PendingApprovalsCard> createState() => _PendingApprovalsCardState();
+}
+
+class _PendingApprovalsCardState extends State<PendingApprovalsCard> {
+  final ValueNotifier<bool> _isHovered = ValueNotifier(false);
+
+  @override
+  void dispose() {
+    _isHovered.dispose();
+    super.dispose();
+  }
+
+  void _showPendingUsersModal() {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (BuildContext context) {
+        return Dialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: const PendingUsersModalContent(),
+        );
+      },
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isClickable = widget.onTap != null;
+    final UsersSnapshot? usersProvider = Provider.of<UsersSnapshot?>(context);
+    final QuerySnapshot? usersSnapshot = usersProvider?.snapshot;
+    return MouseRegion(
+      onEnter: (_) => _isHovered.value = true,
+      onExit: (_) => _isHovered.value = false,
+      cursor: isClickable ? SystemMouseCursors.click : MouseCursor.defer,
+      child: ValueListenableBuilder<bool>(
+        valueListenable: _isHovered,
+        builder: (context, isHovered, child) {
+          return Card(
+            elevation: isHovered && isClickable ? 8 : 2,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: InkWell(
+              onTap: widget.onTap ?? _showPendingUsersModal,
+              borderRadius: BorderRadius.circular(12),
+              child: Padding(
+                padding: const EdgeInsets.all(20),
+                child: child, // Use the child below
+              ),
+            ),
+          );
+        },
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            // Header (no refresh button)
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const SizedBox(width: 24), // Spacer to center the content
+                const Spacer(),
+              ],
+            ),
+            // Icon
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.orange.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: const Icon(
+                Icons.pending_actions,
+                size: 24,
+                color: Colors.orangeAccent,
+              ),
+            ),
+            const SizedBox(height: 16),
+            // Number (real-time count)
+            Builder(
+              builder: (context) {
+                if (usersSnapshot == null) {
+                  return const CircularProgressIndicator();
+                }
+                final docs = usersSnapshot.docs;
+                final count =
+                    docs.where((doc) => doc['status'] == 'pending').length;
+                return Column(
+                  children: [
+                    Text(
+                      '$count',
+                      style: const TextStyle(
+                        fontSize: 28,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.black87,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    const Text(
+                      'Pending User Registrations',
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: Colors.grey,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    if (count > 0)
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 4,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.orangeAccent.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(
+                              Icons.warning_amber,
+                              size: 12,
+                              color: Colors.orangeAccent,
+                            ),
+                            const SizedBox(width: 4),
+                            Text(
+                              'Need admin verification',
+                              style: TextStyle(
+                                fontSize: 10,
+                                color: Colors.orangeAccent[700],
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                  ],
+                );
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class PendingUsersModalContent extends StatefulWidget {
+  const PendingUsersModalContent({Key? key}) : super(key: key);
+
+  @override
+  State<PendingUsersModalContent> createState() =>
+      _PendingUsersModalContentState();
+}
+
+class _PendingUsersModalContentState extends State<PendingUsersModalContent> {
+  List<Map<String, dynamic>> _pendingUsers = [];
+  List<Map<String, dynamic>> _filteredUsers = [];
+  bool _isLoading = true;
+  final TextEditingController _searchController = TextEditingController();
+
+  // Loading states for individual actions
+  final Set<String> _loadingUserIds = {};
+
+  // Loading states for bulk actions
+  bool _isApprovingAll = false;
+  bool _isDeletingAll = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadPendingUsers();
+    _searchController.addListener(_filterUsers);
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _loadPendingUsers() async {
+    setState(() {
+      _isLoading = true;
+    });
+
+    try {
+      final allUsers = await UserStore.getUsers();
+      final pendingUsers =
+          allUsers.where((user) => user['status'] == 'pending').toList();
+
+      // Sort by creation date (latest first)
+      pendingUsers.sort((a, b) {
+        final aCreatedAt = a['createdAtRaw'];
+        final bCreatedAt = b['createdAtRaw'];
+
+        if (aCreatedAt != null && bCreatedAt != null) {
+          return bCreatedAt.compareTo(aCreatedAt); // Descending (newest first)
+        }
+        return 0; // Keep order if no timestamps
+      });
+
+      setState(() {
+        _pendingUsers = pendingUsers;
+        _filteredUsers = pendingUsers;
+        _isLoading = false;
+      });
+    } catch (e) {
+      setState(() {
+        _isLoading = false;
+      });
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Error loading users: $e')));
+      }
+    }
+  }
+
+  void _filterUsers() {
+    final query = _searchController.text.toLowerCase();
+    setState(() {
+      if (query.isEmpty) {
+        _filteredUsers = _pendingUsers;
+      } else {
+        _filteredUsers =
+            _pendingUsers.where((user) {
+              final name = user['name']?.toString().toLowerCase() ?? '';
+              final email = user['email']?.toString().toLowerCase() ?? '';
+              final phone = user['phone']?.toString().toLowerCase() ?? '';
+              final address = user['address']?.toString().toLowerCase() ?? '';
+
+              return name.contains(query) ||
+                  email.contains(query) ||
+                  phone.contains(query) ||
+                  address.contains(query);
+            }).toList();
+      }
+    });
+  }
+
+  Future<void> _approveUser(Map<String, dynamic> user) async {
+    // Show confirmation dialog
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder:
+          (context) => AlertDialog(
+            title: const Text('Approve User'),
+            content: Text('Are you sure you want to approve ${user['name']}?'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(false),
+                child: const Text('Cancel'),
+              ),
+              ElevatedButton(
+                onPressed: () => Navigator.of(context).pop(true),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.green,
+                  foregroundColor: Colors.white,
+                ),
+                child: const Text('Approve'),
+              ),
+            ],
+          ),
+    );
+
+    if (confirmed == true) {
+      setState(() {
+        _loadingUserIds.add(user['id']);
+      });
+
+      try {
+        await UserStore.updateUserStatus(user['id'], 'active');
+
+        // Log activity
+        await FirebaseFirestore.instance.collection('activities').add({
+          'action': 'Accepted user',
+          'user': user['name'],
+          'type': 'accept',
+          'color': Colors.green.value,
+          'icon': Icons.person_add.codePoint,
+          'timestamp': FieldValue.serverTimestamp(),
+        });
+
+        setState(() {
+          _pendingUsers.removeWhere((u) => u['id'] == user['id']);
+          _filteredUsers.removeWhere((u) => u['id'] == user['id']);
+          _loadingUserIds.remove(user['id']);
+        });
+        if (mounted) {
+          // Show success dialog
+          showDialog(
+            context: context,
+            builder:
+                (context) => AlertDialog(
+                  title: Row(
+                    children: [
+                      Icon(Icons.check_circle, color: Colors.green, size: 28),
+                      SizedBox(width: 12),
+                      Text('Success'),
+                    ],
+                  ),
+                  content: Text(
+                    '${user['name']} has been approved successfully!',
+                  ),
+                  actions: [
+                    ElevatedButton(
+                      onPressed: () => Navigator.of(context).pop(),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.green,
+                        foregroundColor: Colors.white,
+                      ),
+                      child: const Text('OK'),
+                    ),
+                  ],
+                ),
+          );
+        }
+      } catch (e) {
+        setState(() {
+          _loadingUserIds.remove(user['id']);
+        });
+        if (mounted) {
+          // Show error dialog
+          showDialog(
+            context: context,
+            builder:
+                (context) => AlertDialog(
+                  title: Row(
+                    children: [
+                      Icon(Icons.error, color: Colors.red, size: 28),
+                      SizedBox(width: 12),
+                      Text('Error'),
+                    ],
+                  ),
+                  content: Text('Failed to approve user: $e'),
+                  actions: [
+                    ElevatedButton(
+                      onPressed: () => Navigator.of(context).pop(),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.red,
+                        foregroundColor: Colors.white,
+                      ),
+                      child: const Text('OK'),
+                    ),
+                  ],
+                ),
+          );
+        }
+      }
+    }
+  }
+
+  Future<void> _rejectUser(Map<String, dynamic> user) async {
+    // Show confirmation dialog
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder:
+          (context) => AlertDialog(
+            title: const Text('Delete User'),
+            content: Text(
+              'Are you sure you want to delete ${user['name']}? This action cannot be undone.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(false),
+                child: const Text('Cancel'),
+              ),
+              ElevatedButton(
+                onPressed: () => Navigator.of(context).pop(true),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.red,
+                  foregroundColor: Colors.white,
+                ),
+                child: const Text('Delete'),
+              ),
+            ],
+          ),
+    );
+
+    if (confirmed == true) {
+      setState(() {
+        _loadingUserIds.add(user['id']);
+      });
+
+      try {
+        await UserStore.deleteUser(user['id']);
+
+        // Log activity
+        await FirebaseFirestore.instance.collection('activities').add({
+          'action': 'Rejected user registration',
+          'user': user['name'],
+          'type': 'delete',
+          'color': Colors.red.value,
+          'icon': Icons.block.codePoint,
+          'timestamp': FieldValue.serverTimestamp(),
+        });
+
+        setState(() {
+          _pendingUsers.removeWhere((u) => u['id'] == user['id']);
+          _filteredUsers.removeWhere((u) => u['id'] == user['id']);
+          _loadingUserIds.remove(user['id']);
+        });
+        if (mounted) {
+          // Show success dialog
+          showDialog(
+            context: context,
+            builder:
+                (context) => AlertDialog(
+                  title: Row(
+                    children: [
+                      Icon(Icons.check_circle, color: Colors.green, size: 28),
+                      SizedBox(width: 12),
+                      Text('Success'),
+                    ],
+                  ),
+                  content: Text(
+                    '${user['name']} has been deleted successfully!',
+                  ),
+                  actions: [
+                    ElevatedButton(
+                      onPressed: () => Navigator.of(context).pop(),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.green,
+                        foregroundColor: Colors.white,
+                      ),
+                      child: const Text('OK'),
+                    ),
+                  ],
+                ),
+          );
+        }
+      } catch (e) {
+        setState(() {
+          _loadingUserIds.remove(user['id']);
+        });
+        if (mounted) {
+          // Show error dialog
+          showDialog(
+            context: context,
+            builder:
+                (context) => AlertDialog(
+                  title: Row(
+                    children: [
+                      Icon(Icons.error, color: Colors.red, size: 28),
+                      SizedBox(width: 12),
+                      Text('Error'),
+                    ],
+                  ),
+                  content: Text('Failed to delete user: $e'),
+                  actions: [
+                    ElevatedButton(
+                      onPressed: () => Navigator.of(context).pop(),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.red,
+                        foregroundColor: Colors.white,
+                      ),
+                      child: const Text('OK'),
+                    ),
+                  ],
+                ),
+          );
+        }
+      }
+    }
+  }
+
+  Future<void> _approveAllUsers() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder:
+          (context) => AlertDialog(
+            title: const Text('Approve All Users'),
+            content: Text(
+              'Are you sure you want to approve all ${_filteredUsers.length} users?',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(false),
+                child: const Text('Cancel'),
+              ),
+              ElevatedButton(
+                onPressed: () => Navigator.of(context).pop(true),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.green,
+                  foregroundColor: Colors.white,
+                ),
+                child: const Text('Approve All'),
+              ),
+            ],
+          ),
+    );
+
+    if (confirmed == true) {
+      setState(() {
+        _isApprovingAll = true;
+      });
+
+      try {
+        for (final user in _filteredUsers) {
+          await UserStore.updateUserStatus(user['id'], 'active');
+
+          // Log activity for each user
+          await FirebaseFirestore.instance.collection('activities').add({
+            'action': 'Accepted user',
+            'user': user['name'],
+            'type': 'accept',
+            'color': Colors.green.value,
+            'icon': Icons.person_add.codePoint,
+            'timestamp': FieldValue.serverTimestamp(),
+          });
+        }
+        final approvedCount = _filteredUsers.length;
+        setState(() {
+          _pendingUsers.clear();
+          _filteredUsers.clear();
+          _isApprovingAll = false;
+        });
+        if (mounted) {
+          // Show success dialog
+          showDialog(
+            context: context,
+            builder:
+                (context) => AlertDialog(
+                  title: Row(
+                    children: [
+                      Icon(Icons.check_circle, color: Colors.green, size: 28),
+                      SizedBox(width: 12),
+                      Text('Success'),
+                    ],
+                  ),
+                  content: Text(
+                    'All $approvedCount users have been approved successfully!',
+                  ),
+                  actions: [
+                    ElevatedButton(
+                      onPressed: () => Navigator.of(context).pop(),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.green,
+                        foregroundColor: Colors.white,
+                      ),
+                      child: const Text('OK'),
+                    ),
+                  ],
+                ),
+          );
+        }
+      } catch (e) {
+        setState(() {
+          _isApprovingAll = false;
+        });
+        if (mounted) {
+          // Show error dialog
+          showDialog(
+            context: context,
+            builder:
+                (context) => AlertDialog(
+                  title: Row(
+                    children: [
+                      Icon(Icons.error, color: Colors.red, size: 28),
+                      SizedBox(width: 12),
+                      Text('Error'),
+                    ],
+                  ),
+                  content: Text('Failed to approve users: $e'),
+                  actions: [
+                    ElevatedButton(
+                      onPressed: () => Navigator.of(context).pop(),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.red,
+                        foregroundColor: Colors.white,
+                      ),
+                      child: const Text('OK'),
+                    ),
+                  ],
+                ),
+          );
+        }
+      }
+    }
+  }
+
+  Future<void> _rejectAllUsers() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder:
+          (context) => AlertDialog(
+            title: const Text('Delete All Users'),
+            content: Text(
+              'Are you sure you want to delete all ${_filteredUsers.length} users? This action cannot be undone.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(false),
+                child: const Text('Cancel'),
+              ),
+              ElevatedButton(
+                onPressed: () => Navigator.of(context).pop(true),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.red,
+                  foregroundColor: Colors.white,
+                ),
+                child: const Text('Delete All'),
+              ),
+            ],
+          ),
+    );
+
+    if (confirmed == true) {
+      setState(() {
+        _isDeletingAll = true;
+      });
+
+      try {
+        for (final user in _filteredUsers) {
+          await UserStore.deleteUser(user['id']);
+
+          // Log activity for each user
+          await FirebaseFirestore.instance.collection('activities').add({
+            'action': 'Rejected user registration',
+            'user': user['name'],
+            'type': 'delete',
+            'color': Colors.red.value,
+            'icon': Icons.block.codePoint,
+            'timestamp': FieldValue.serverTimestamp(),
+          });
+        }
+        final deletedCount = _filteredUsers.length;
+        setState(() {
+          _pendingUsers.clear();
+          _filteredUsers.clear();
+          _isDeletingAll = false;
+        });
+        if (mounted) {
+          // Show success dialog
+          showDialog(
+            context: context,
+            builder:
+                (context) => AlertDialog(
+                  title: Row(
+                    children: [
+                      Icon(Icons.check_circle, color: Colors.green, size: 28),
+                      SizedBox(width: 12),
+                      Text('Success'),
+                    ],
+                  ),
+                  content: Text(
+                    'All $deletedCount users have been deleted successfully!',
+                  ),
+                  actions: [
+                    ElevatedButton(
+                      onPressed: () => Navigator.of(context).pop(),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.green,
+                        foregroundColor: Colors.white,
+                      ),
+                      child: const Text('OK'),
+                    ),
+                  ],
+                ),
+          );
+        }
+      } catch (e) {
+        setState(() {
+          _isDeletingAll = false;
+        });
+        if (mounted) {
+          // Show error dialog
+          showDialog(
+            context: context,
+            builder:
+                (context) => AlertDialog(
+                  title: Row(
+                    children: [
+                      Icon(Icons.error, color: Colors.red, size: 28),
+                      SizedBox(width: 12),
+                      Text('Error'),
+                    ],
+                  ),
+                  content: Text('Failed to delete users: $e'),
+                  actions: [
+                    ElevatedButton(
+                      onPressed: () => Navigator.of(context).pop(),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.red,
+                        foregroundColor: Colors.white,
+                      ),
+                      child: const Text('OK'),
+                    ),
+                  ],
+                ),
+          );
+        }
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: MediaQuery.of(context).size.width * 0.5,
+      height: MediaQuery.of(context).size.height * 0.8,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Column(
+        children: [
+          // Header
+          Container(
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: const BorderRadius.only(
+                topLeft: Radius.circular(16),
+                topRight: Radius.circular(16),
+              ),
+            ),
+            child: Row(
+              children: [
+                const Text(
+                  'Pending Users',
+                  style: TextStyle(
+                    color: Colors.black87,
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const Spacer(),
+                IconButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  icon: const Icon(Icons.close, color: Colors.black87),
+                ),
+              ],
+            ),
+          ),
+
+          // Search and Bulk Actions Row
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: Row(
+              children: [
+                // Search Bar
+                Expanded(
+                  child: TextField(
+                    controller: _searchController,
+                    decoration: InputDecoration(
+                      hintText: 'Search users...',
+                      prefixIcon: const Icon(Icons.search),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      filled: true,
+                      fillColor: Colors.grey[50],
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 8,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                // Bulk Actions
+                if (_filteredUsers.isNotEmpty) ...[
+                  OutlinedButton(
+                    onPressed:
+                        _isApprovingAll || _isDeletingAll
+                            ? null
+                            : _approveAllUsers,
+                    style: OutlinedButton.styleFrom(
+                      side: const BorderSide(color: Colors.grey),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 8,
+                      ),
+                    ),
+                    child:
+                        _isApprovingAll
+                            ? const SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                            : const Text('Approve All'),
+                  ),
+                  const SizedBox(width: 8),
+                  ElevatedButton(
+                    onPressed:
+                        _isApprovingAll || _isDeletingAll
+                            ? null
+                            : _rejectAllUsers,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.red,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 8,
+                      ),
+                    ),
+                    child:
+                        _isDeletingAll
+                            ? const SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                valueColor: AlwaysStoppedAnimation<Color>(
+                                  Colors.white,
+                                ),
+                              ),
+                            )
+                            : const Text('Delete All'),
+                  ),
+                ],
+              ],
+            ),
+          ),
+
+          // Users List
+          Expanded(
+            child:
+                _isLoading
+                    ? const Center(child: CircularProgressIndicator())
+                    : _filteredUsers.isEmpty
+                    ? Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            _searchController.text.isEmpty
+                                ? Icons.people_outline
+                                : Icons.search_off,
+                            size: 64,
+                            color: Colors.grey[400],
+                          ),
+                          const SizedBox(height: 16),
+                          Text(
+                            _searchController.text.isEmpty
+                                ? 'No pending users found'
+                                : 'No users match your search',
+                            style: TextStyle(
+                              fontSize: 16,
+                              color: Colors.grey[600],
+                            ),
+                          ),
+                        ],
+                      ),
+                    )
+                    : ListView.separated(
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      itemCount: _filteredUsers.length,
+                      separatorBuilder:
+                          (context, index) => const Divider(height: 1),
+                      itemBuilder: (context, index) {
+                        final user = _filteredUsers[index];
+                        return Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          child: Row(
+                            children: [
+                              // User Avatar
+                              CircleAvatar(
+                                backgroundColor: Colors.grey[300],
+                                radius: 20,
+                                child: Icon(
+                                  Icons.person,
+                                  color: Colors.grey[600],
+                                  size: 20,
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              // User Info
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      user['name']?.toString() ?? 'Unknown',
+                                      style: const TextStyle(
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.bold,
+                                        color: Colors.black87,
+                                      ),
+                                    ),
+                                    Text(
+                                      user['email']?.toString() ?? 'No email',
+                                      style: TextStyle(
+                                        color: Colors.grey[600],
+                                        fontSize: 14,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              // Action Buttons
+                              Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  ElevatedButton(
+                                    onPressed:
+                                        _loadingUserIds.contains(user['id']) ||
+                                                _isApprovingAll ||
+                                                _isDeletingAll
+                                            ? null
+                                            : () => _approveUser(user),
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: Colors.green,
+                                      foregroundColor: Colors.white,
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 16,
+                                        vertical: 8,
+                                      ),
+                                      minimumSize: const Size(80, 32),
+                                    ),
+                                    child:
+                                        _loadingUserIds.contains(user['id'])
+                                            ? const SizedBox(
+                                              width: 16,
+                                              height: 16,
+                                              child: CircularProgressIndicator(
+                                                strokeWidth: 2,
+                                                valueColor:
+                                                    AlwaysStoppedAnimation<
+                                                      Color
+                                                    >(Colors.white),
+                                              ),
+                                            )
+                                            : const Text('Accept'),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  ElevatedButton(
+                                    onPressed:
+                                        _loadingUserIds.contains(user['id']) ||
+                                                _isApprovingAll ||
+                                                _isDeletingAll
+                                            ? null
+                                            : () => _rejectUser(user),
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: Colors.red,
+                                      foregroundColor: Colors.white,
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 16,
+                                        vertical: 8,
+                                      ),
+                                      minimumSize: const Size(80, 32),
+                                    ),
+                                    child:
+                                        _loadingUserIds.contains(user['id'])
+                                            ? const SizedBox(
+                                              width: 16,
+                                              height: 16,
+                                              child: CircularProgressIndicator(
+                                                strokeWidth: 2,
+                                                valueColor:
+                                                    AlwaysStoppedAnimation<
+                                                      Color
+                                                    >(Colors.white),
+                                              ),
+                                            )
+                                            : const Text('Delete'),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        );
+                      },
+                    ),
+          ),
+        ],
+      ),
+    );
+  }
+}
