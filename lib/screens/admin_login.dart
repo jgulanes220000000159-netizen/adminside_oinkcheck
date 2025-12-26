@@ -273,320 +273,288 @@ class _AdminLoginState extends State<AdminLogin> {
     return Scaffold(
       body: Container(
         decoration: const BoxDecoration(
-          image: DecorationImage(
-            image: AssetImage('assets/bgg.png'),
-            fit: BoxFit.cover,
-          ),
+          color: Color(0xFF2D7204), // Solid green background
         ),
-        child: Container(
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [
-                const Color.fromARGB(255, 42, 157, 50).withOpacity(0.7),
-                const Color.fromARGB(255, 34, 139, 34).withOpacity(0.7),
-                const Color.fromARGB(255, 25, 111, 61).withOpacity(0.7),
-              ],
-              stops: const [0.0, 0.5, 1.0],
-            ),
-          ),
-          child: SafeArea(
-            child: Center(
-              child: SingleChildScrollView(
-                // Added to ensure content fits
-                child: Container(
-                  constraints: BoxConstraints(
-                    maxWidth: cardMaxWidth,
-                    minWidth: cardMinWidth,
+        child: SafeArea(
+          child: Center(
+            child: SingleChildScrollView(
+              // Added to ensure content fits
+              child: Container(
+                constraints: BoxConstraints(
+                  maxWidth: cardMaxWidth,
+                  minWidth: cardMinWidth,
+                ),
+                child: Card(
+                  elevation: 10,
+                  color: Colors.white,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
                   ),
-                  child: Card(
-                    elevation: 10,
-                    color: Colors.white,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8),
+                  child: Padding(
+                    padding: EdgeInsets.all(
+                      is1366x768 ? padding * 0.4 : padding,
                     ),
-                    child: Padding(
-                      padding: EdgeInsets.all(
-                        is1366x768 ? padding * 0.4 : padding,
-                      ),
-                      child: Form(
-                        key: _formKey,
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            // Admin Icon and Title
-                            Container(
-                              decoration: BoxDecoration(
-                                shape: BoxShape.circle,
-                                color: const Color.fromARGB(255, 42, 157, 50),
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: Colors.black.withOpacity(0.1),
-                                    blurRadius: 10,
-                                    offset: const Offset(0, 3),
-                                  ),
-                                ],
-                              ),
-                              padding: EdgeInsets.all(padding * 0.2),
-                              child: Icon(
-                                Icons.admin_panel_settings,
-                                size: iconSize,
-                                color: Colors.white,
-                              ),
+                    child: Form(
+                      key: _formKey,
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          // Admin Icon and Title
+                          Container(
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              color: const Color.fromARGB(255, 42, 157, 50),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.black.withOpacity(0.1),
+                                  blurRadius: 10,
+                                  offset: const Offset(0, 3),
+                                ),
+                              ],
                             ),
-                            SizedBox(height: padding * 0.2),
-                            Text(
-                              'Admin Portal',
-                              style: TextStyle(
-                                color: const Color.fromARGB(255, 42, 157, 50),
-                                fontSize: titleFontSize,
-                                fontWeight: FontWeight.bold,
-                              ),
+                            padding: EdgeInsets.all(padding * 0.2),
+                            child: Icon(
+                              Icons.admin_panel_settings,
+                              size: iconSize,
+                              color: Colors.white,
                             ),
-                            SizedBox(
-                              height:
-                                  is1366x768 ? padding * 0.1 : padding * 1.5,
+                          ),
+                          SizedBox(height: padding * 0.2),
+                          Text(
+                            'Admin Portal',
+                            style: TextStyle(
+                              color: const Color.fromARGB(255, 42, 157, 50),
+                              fontSize: titleFontSize,
+                              fontWeight: FontWeight.bold,
                             ),
-                            // Welcome Text
-                            Text(
-                              'Welcome Back!',
-                              style: TextStyle(
-                                color: const Color.fromARGB(255, 42, 157, 50),
-                                fontSize: welcomeFontSize,
-                                fontWeight: FontWeight.bold,
-                              ),
+                          ),
+                          SizedBox(
+                            height: is1366x768 ? padding * 0.1 : padding * 1.5,
+                          ),
+                          // Welcome Text
+                          Text(
+                            'Welcome Back!',
+                            style: TextStyle(
+                              color: const Color.fromARGB(255, 42, 157, 50),
+                              fontSize: welcomeFontSize,
+                              fontWeight: FontWeight.bold,
                             ),
-                            SizedBox(height: 2),
-                            Text(
-                              'Log in to admin dashboard',
-                              style: TextStyle(
-                                color: Colors.grey,
-                                fontSize: subtitleFontSize,
-                              ),
+                          ),
+                          SizedBox(height: 2),
+                          Text(
+                            'Log in to admin dashboard',
+                            style: TextStyle(
+                              color: Colors.grey,
+                              fontSize: subtitleFontSize,
                             ),
-                            SizedBox(
-                              height:
-                                  is1366x768 ? padding * 0.2 : padding * 1.5,
-                            ),
-                            // Email Field
-                            SizedBox(
-                              height: inputHeight,
-                              child: TextFormField(
-                                controller: _emailController,
-                                focusNode: _emailFocusNode,
-                                textInputAction: TextInputAction.next,
-                                onFieldSubmitted: (value) {
-                                  // Move focus to password field when Enter is pressed
-                                  _passwordFocusNode.requestFocus();
-                                },
-                                decoration: InputDecoration(
-                                  labelText: 'Email',
-                                  labelStyle: const TextStyle(
+                          ),
+                          SizedBox(
+                            height: is1366x768 ? padding * 0.2 : padding * 1.5,
+                          ),
+                          // Email Field
+                          SizedBox(
+                            height: inputHeight,
+                            child: TextFormField(
+                              controller: _emailController,
+                              focusNode: _emailFocusNode,
+                              textInputAction: TextInputAction.next,
+                              onFieldSubmitted: (value) {
+                                // Move focus to password field when Enter is pressed
+                                _passwordFocusNode.requestFocus();
+                              },
+                              decoration: InputDecoration(
+                                labelText: 'Email',
+                                labelStyle: const TextStyle(color: Colors.grey),
+                                enabledBorder: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(5),
+                                  borderSide: const BorderSide(
                                     color: Colors.grey,
-                                  ),
-                                  enabledBorder: OutlineInputBorder(
-                                    borderRadius: BorderRadius.circular(5),
-                                    borderSide: const BorderSide(
-                                      color: Colors.grey,
-                                      width: 1.0,
-                                    ),
-                                  ),
-                                  focusedBorder: OutlineInputBorder(
-                                    borderRadius: BorderRadius.circular(5),
-                                    borderSide: const BorderSide(
-                                      color: Color.fromARGB(255, 42, 157, 50),
-                                      width: 1.5,
-                                    ),
-                                  ),
-                                  prefixIcon: const Icon(
-                                    Icons.email,
-                                    color: Colors.grey,
-                                    size: 16,
+                                    width: 1.0,
                                   ),
                                 ),
-                                validator: (value) {
-                                  if (value == null || value.isEmpty) {
-                                    return 'Please enter your email';
-                                  }
-                                  if (!value.contains('@')) {
-                                    return 'Please enter a valid email';
-                                  }
-                                  return null;
-                                },
+                                focusedBorder: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(5),
+                                  borderSide: const BorderSide(
+                                    color: Color.fromARGB(255, 42, 157, 50),
+                                    width: 1.5,
+                                  ),
+                                ),
+                                prefixIcon: const Icon(
+                                  Icons.email,
+                                  color: Colors.grey,
+                                  size: 16,
+                                ),
                               ),
+                              validator: (value) {
+                                if (value == null || value.isEmpty) {
+                                  return 'Please enter your email';
+                                }
+                                if (!value.contains('@')) {
+                                  return 'Please enter a valid email';
+                                }
+                                return null;
+                              },
                             ),
-                            SizedBox(
-                              height:
-                                  is1366x768 ? padding * 0.2 : padding * 0.5,
-                            ),
-                            // Password Field
-                            SizedBox(
-                              height: inputHeight,
-                              child: TextFormField(
-                                controller: _passwordController,
-                                focusNode: _passwordFocusNode,
-                                obscureText: _obscurePassword,
-                                textInputAction: TextInputAction.done,
-                                onFieldSubmitted: (value) {
-                                  // Submit the form when Enter is pressed in password field
-                                  if (!_isLoading) {
-                                    _login();
-                                  }
-                                },
-                                decoration: InputDecoration(
-                                  labelText: 'Password',
-                                  labelStyle: const TextStyle(
+                          ),
+                          SizedBox(
+                            height: is1366x768 ? padding * 0.2 : padding * 0.5,
+                          ),
+                          // Password Field
+                          SizedBox(
+                            height: inputHeight,
+                            child: TextFormField(
+                              controller: _passwordController,
+                              focusNode: _passwordFocusNode,
+                              obscureText: _obscurePassword,
+                              textInputAction: TextInputAction.done,
+                              onFieldSubmitted: (value) {
+                                // Submit the form when Enter is pressed in password field
+                                if (!_isLoading) {
+                                  _login();
+                                }
+                              },
+                              decoration: InputDecoration(
+                                labelText: 'Password',
+                                labelStyle: const TextStyle(color: Colors.grey),
+                                enabledBorder: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(5),
+                                  borderSide: const BorderSide(
                                     color: Colors.grey,
+                                    width: 1.0,
                                   ),
-                                  enabledBorder: OutlineInputBorder(
-                                    borderRadius: BorderRadius.circular(5),
-                                    borderSide: const BorderSide(
-                                      color: Colors.grey,
-                                      width: 1.0,
-                                    ),
+                                ),
+                                focusedBorder: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(5),
+                                  borderSide: const BorderSide(
+                                    color: Color.fromARGB(255, 42, 157, 50),
+                                    width: 1.5,
                                   ),
-                                  focusedBorder: OutlineInputBorder(
-                                    borderRadius: BorderRadius.circular(5),
-                                    borderSide: const BorderSide(
-                                      color: Color.fromARGB(255, 42, 157, 50),
-                                      width: 1.5,
-                                    ),
-                                  ),
-                                  prefixIcon: const Icon(
-                                    Icons.lock,
+                                ),
+                                prefixIcon: const Icon(
+                                  Icons.lock,
+                                  color: Colors.grey,
+                                  size: 16,
+                                ),
+                                suffixIcon: IconButton(
+                                  icon: Icon(
+                                    _obscurePassword
+                                        ? Icons.visibility_off
+                                        : Icons.visibility,
                                     color: Colors.grey,
                                     size: 16,
                                   ),
-                                  suffixIcon: IconButton(
-                                    icon: Icon(
-                                      _obscurePassword
-                                          ? Icons.visibility_off
-                                          : Icons.visibility,
-                                      color: Colors.grey,
-                                      size: 16,
-                                    ),
-                                    onPressed: () {
-                                      setState(() {
-                                        _obscurePassword = !_obscurePassword;
-                                      });
-                                    },
-                                  ),
-                                ),
-                                validator: (value) {
-                                  if (value == null || value.isEmpty) {
-                                    return 'Please enter your password';
-                                  }
-                                  return null;
-                                },
-                              ),
-                            ),
-                            // Forgot Password Link
-                            Align(
-                              alignment: Alignment.centerRight,
-                              child: TextButton(
-                                onPressed:
-                                    _isLoading ? null : _sendPasswordResetEmail,
-                                style: TextButton.styleFrom(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 0,
-                                  ),
-                                  minimumSize: Size.zero,
-                                  tapTargetSize:
-                                      MaterialTapTargetSize.shrinkWrap,
-                                ),
-                                child: Text(
-                                  'Forgot Password?',
-                                  style: TextStyle(
-                                    color: const Color.fromARGB(
-                                      255,
-                                      42,
-                                      157,
-                                      50,
-                                    ),
-                                    fontSize: subtitleFontSize * 0.85,
-                                    fontWeight: FontWeight.w500,
-                                  ),
+                                  onPressed: () {
+                                    setState(() {
+                                      _obscurePassword = !_obscurePassword;
+                                    });
+                                  },
                                 ),
                               ),
+                              validator: (value) {
+                                if (value == null || value.isEmpty) {
+                                  return 'Please enter your password';
+                                }
+                                return null;
+                              },
                             ),
-                            if (_errorMessage != null) ...[
-                              SizedBox(height: padding * 0.1),
-                              Text(
-                                _errorMessage!,
-                                style: const TextStyle(
-                                  color: Color(0xFFFFAB91),
-                                  fontSize: 10,
-                                ),
-                              ),
-                            ],
-                            SizedBox(
-                              height:
-                                  is1366x768 ? padding * 0.2 : padding * 1.0,
-                            ),
-                            // Login Button
-                            SizedBox(
-                              width: double.infinity,
-                              height: buttonHeight,
-                              child: ElevatedButton(
-                                onPressed: _isLoading ? null : _login,
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: const Color.fromARGB(
-                                    255,
-                                    42,
-                                    157,
-                                    50,
-                                  ),
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(5),
-                                  ),
-                                  elevation: 5,
-                                ),
-                                child:
-                                    _isLoading
-                                        ? const SizedBox(
-                                          width: 12,
-                                          height: 12,
-                                          child: CircularProgressIndicator(
-                                            strokeWidth: 2,
-                                            valueColor:
-                                                AlwaysStoppedAnimation<Color>(
-                                                  Colors.white,
-                                                ),
-                                          ),
-                                        )
-                                        : Text(
-                                          'Log in',
-                                          style: TextStyle(
-                                            color: Colors.white,
-                                            fontSize: subtitleFontSize,
-                                            fontWeight: FontWeight.bold,
-                                          ),
-                                        ),
-                              ),
-                            ),
-                            SizedBox(
-                              height:
-                                  is1366x768 ? padding * 0.2 : padding * 0.5,
-                            ),
-                            // Link to setup screen
-                            TextButton(
+                          ),
+                          // Forgot Password Link
+                          Align(
+                            alignment: Alignment.centerRight,
+                            child: TextButton(
                               onPressed:
-                                  _isLoading
-                                      ? null
-                                      : () {
-                                        Navigator.pushNamed(context, '/setup');
-                                      },
+                                  _isLoading ? null : _sendPasswordResetEmail,
+                              style: TextButton.styleFrom(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 0,
+                                ),
+                                minimumSize: Size.zero,
+                                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                              ),
                               child: Text(
-                                'Create First Admin Account',
+                                'Forgot Password?',
                                 style: TextStyle(
                                   color: const Color.fromARGB(255, 42, 157, 50),
-                                  fontSize: subtitleFontSize * 0.9,
+                                  fontSize: subtitleFontSize * 0.85,
+                                  fontWeight: FontWeight.w500,
                                 ),
+                              ),
+                            ),
+                          ),
+                          if (_errorMessage != null) ...[
+                            SizedBox(height: padding * 0.1),
+                            Text(
+                              _errorMessage!,
+                              style: const TextStyle(
+                                color: Color(0xFFFFAB91),
+                                fontSize: 10,
                               ),
                             ),
                           ],
-                        ),
+                          SizedBox(
+                            height: is1366x768 ? padding * 0.2 : padding * 1.0,
+                          ),
+                          // Login Button
+                          SizedBox(
+                            width: double.infinity,
+                            height: buttonHeight,
+                            child: ElevatedButton(
+                              onPressed: _isLoading ? null : _login,
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: const Color.fromARGB(
+                                  255,
+                                  42,
+                                  157,
+                                  50,
+                                ),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(5),
+                                ),
+                                elevation: 5,
+                              ),
+                              child:
+                                  _isLoading
+                                      ? const SizedBox(
+                                        width: 12,
+                                        height: 12,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2,
+                                          valueColor:
+                                              AlwaysStoppedAnimation<Color>(
+                                                Colors.white,
+                                              ),
+                                        ),
+                                      )
+                                      : Text(
+                                        'Log in',
+                                        style: TextStyle(
+                                          color: Colors.white,
+                                          fontSize: subtitleFontSize,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                            ),
+                          ),
+                          SizedBox(
+                            height: is1366x768 ? padding * 0.2 : padding * 0.5,
+                          ),
+                          // Link to setup screen
+                          TextButton(
+                            onPressed:
+                                _isLoading
+                                    ? null
+                                    : () {
+                                      Navigator.pushNamed(context, '/setup');
+                                    },
+                            child: Text(
+                              'Create First Admin Account',
+                              style: TextStyle(
+                                color: const Color.fromARGB(255, 42, 157, 50),
+                                fontSize: subtitleFontSize * 0.9,
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                   ),

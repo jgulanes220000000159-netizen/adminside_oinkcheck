@@ -1,11 +1,14 @@
-const { onDocumentCreated } = require("firebase-functions/v2/firestore");
 const { onCall } = require("firebase-functions/v2/https");
-const { defineSecret } = require("firebase-functions/params");
 const admin = require("firebase-admin");
-const nodemailer = require("nodemailer");
 admin.initializeApp();
 
-// Transporter will be created inside the handler to avoid startup issues
+// Temporarily disabled to allow deployment without Secret Manager API
+// Uncomment after enabling Secret Manager API in Google Cloud Console
+// Also uncomment the imports and secrets below when re-enabling
+/*
+const { onDocumentCreated } = require("firebase-functions/v2/firestore");
+const { defineSecret } = require("firebase-functions/params");
+const nodemailer = require("nodemailer");
 
 // v2: define secrets for Gmail creds (set via `firebase functions:secrets:set`)
 const GMAIL_EMAIL = defineSecret("GMAIL_EMAIL");
@@ -16,6 +19,8 @@ exports.notifyAdminOnUserRegister = onDocumentCreated(
     document: "users/{userId}",
     region: "us-central1",
     secrets: [GMAIL_EMAIL, GMAIL_PASSWORD],
+    // Make secrets optional to allow deployment without Secret Manager API enabled
+    // Secrets will be checked at runtime instead
   },
   async (event) => {
     const snap = event.data; // QueryDocumentSnapshot
@@ -157,6 +162,128 @@ exports.notifyAdminOnUserRegister = onDocumentCreated(
     } catch (err) {
       console.error("notifyAdminOnUserRegister: sendMail failed", err);
       throw err;
+    }
+  },
+);
+*/
+
+/**
+ * Cloud Function to create a user account
+ * Creates both the Firebase Authentication account and Firestore document
+ * Can only be called by authenticated admin users
+ * This prevents the admin from being logged out when creating new users
+ */
+exports.createUserAccount = onCall(
+  {
+    region: "us-central1",
+  },
+  async (request) => {
+    // Verify the caller is authenticated
+    if (!request.auth) {
+      throw new Error("Authentication required to create users");
+    }
+
+    // Verify the caller is an admin
+    const callerUid = request.auth.uid;
+    const adminDoc = await admin
+      .firestore()
+      .collection("admins")
+      .doc(callerUid)
+      .get();
+
+    if (!adminDoc.exists) {
+      throw new Error("Unauthorized: Only admins can create users");
+    }
+
+    const {
+      email,
+      password,
+      fullName,
+      role,
+      phoneNumber = "",
+      street = "",
+      province = "",
+      cityMunicipality = "",
+      barangay = "",
+      address = "",
+    } = request.data;
+
+    if (!email || !password || !fullName || !role) {
+      throw new Error("email, password, fullName, and role are required");
+    }
+
+    // Validate role
+    const validRoles = [
+      "expert",
+      "head_veterinarian",
+      "machine_learning_expert",
+    ];
+    if (!validRoles.includes(role)) {
+      throw new Error(`Invalid role. Must be one of: ${validRoles.join(", ")}`);
+    }
+
+    // Check head veterinarian limit
+    if (role === "head_veterinarian") {
+      const existingHeadVet = await admin
+        .firestore()
+        .collection("users")
+        .where("role", "==", "head_veterinarian")
+        .limit(1)
+        .get();
+
+      if (!existingHeadVet.empty) {
+        throw new Error("Only one Head Veterinarian account is allowed");
+      }
+    }
+
+    console.log(
+      `createUserAccount: Creating ${role} account for ${email} by admin ${callerUid}`,
+    );
+
+    try {
+      // Create user in Firebase Auth using Admin SDK (doesn't sign in)
+      const userRecord = await admin.auth().createUser({
+        email: email,
+        password: password,
+        emailVerified: false,
+      });
+
+      const uid = userRecord.uid;
+
+      // Create user document in Firestore
+      await admin
+        .firestore()
+        .collection("users")
+        .doc(uid)
+        .set({
+          userId: uid,
+          fullName: fullName,
+          email: email,
+          phoneNumber: phoneNumber,
+          street: street,
+          province: province,
+          cityMunicipality: cityMunicipality,
+          barangay: barangay,
+          address:
+            address ||
+            `${street ? street + ", " : ""}${barangay}, ${cityMunicipality}, ${province}`,
+          role: role,
+          status: "active", // Experts are automatically active
+          imageProfile: "",
+          createdAt: admin.firestore.FieldValue.serverTimestamp(),
+          acceptedAt: admin.firestore.FieldValue.serverTimestamp(), // Auto-accepted
+        });
+
+      console.log(`createUserAccount: Successfully created user ${uid}`);
+
+      return {
+        success: true,
+        uid: uid,
+        message: `${role} account created successfully`,
+      };
+    } catch (error) {
+      console.error("createUserAccount: Error creating user", error);
+      throw new Error(`Failed to create user: ${error.message}`);
     }
   },
 );

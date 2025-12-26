@@ -3583,11 +3583,11 @@ class _ReportsState extends State<Reports> {
     final avgPerDay = _reviewsCompleted / _getSelectedRangeDays();
 
     if (avgPerDay < 5) {
-      return 'Low review activity detected (${avgPerDay.toStringAsFixed(1)} per day). Consider checking expert workload distribution or if additional support is needed.';
+      return 'Low review activity detected (${avgPerDay.toStringAsFixed(1)} per day).';
     } else if (avgPerDay >= 10) {
       return 'High productivity period! ${avgPerDay.toStringAsFixed(1)} reviews per day. This indicates strong expert engagement and efficient workflow.';
     } else {
-      return 'Moderate review activity at ${avgPerDay.toStringAsFixed(1)} reviews per day. Monitor trends in the Avg. Response Time chart to ensure consistent service levels.';
+      return 'Moderate review activity at ${avgPerDay.toStringAsFixed(1)} reviews per day. ';
     }
   }
 
@@ -3601,9 +3601,9 @@ class _ReportsState extends State<Reports> {
     final gapPercentage = (gap / _totalScansSubmitted) * 100;
 
     if (gapPercentage > 30) {
-      return 'Significant backlog detected: $gap scans (${gapPercentage.toStringAsFixed(0)}%) are pending or reviewed outside the time range. Check "Overdue Pending >24h" and consider redistributing workload.';
+      return 'Significant backlog detected: $gap scans (${gapPercentage.toStringAsFixed(0)}%) are pending or reviewed outside the time range.';
     } else if (gapPercentage > 15) {
-      return 'Moderate gap of $gap scans (${gapPercentage.toStringAsFixed(0)}%). Some reports may still be in review. Monitor the "Avg. Response Time" to ensure timely processing.';
+      return 'Moderate gap of $gap scans (${gapPercentage.toStringAsFixed(0)}%). Some reports may still be in review.';
     } else {
       return 'Small gap of $gap scans (${gapPercentage.toStringAsFixed(0)}%). This is normal as some scans may have been reviewed just outside the time window or are newly submitted.';
     }
@@ -5414,7 +5414,18 @@ class _DiseaseDistributionChartState extends State<DiseaseDistributionChart> {
         .snapshots()
         .listen((snap) {
           _lastSnapshot = snap;
-          _scheduleDebouncedRecompute();
+          // On first load, compute immediately if we have widget.diseaseStats to avoid delay
+          if (_liveAggregated.isEmpty && widget.diseaseStats.isNotEmpty) {
+            final agg = _aggregateFromSnapshot(snap, widget.selectedTimeRange);
+            if (agg.isNotEmpty) {
+              setState(() {
+                _liveAggregated = agg;
+              });
+            }
+          } else {
+            // For subsequent updates, use debounce to prevent flicker
+            _scheduleDebouncedRecompute();
+          }
         });
     // Load saved chart mode preference
     () async {
@@ -5449,9 +5460,11 @@ class _DiseaseDistributionChartState extends State<DiseaseDistributionChart> {
         _liveAggregated = [];
       });
     }
+    // If time range or city changed, compute immediately (don't wait for debounce)
     if ((oldWidget.selectedTimeRange != widget.selectedTimeRange ||
             oldWidget.selectedCity != widget.selectedCity) &&
         _lastSnapshot != null) {
+      // Compute immediately for instant display
       final agg = _aggregateFromSnapshot(
         _lastSnapshot,
         widget.selectedTimeRange,
@@ -5466,6 +5479,20 @@ class _DiseaseDistributionChartState extends State<DiseaseDistributionChart> {
           _trendIsEmpty = false;
         });
         _loadTrend();
+      }
+    }
+    // Also compute immediately on first load if we have snapshot but no live data yet
+    if (_liveAggregated.isEmpty &&
+        widget.diseaseStats.isNotEmpty &&
+        _lastSnapshot != null) {
+      final agg = _aggregateFromSnapshot(
+        _lastSnapshot,
+        widget.selectedTimeRange,
+      );
+      if (agg.isNotEmpty) {
+        setState(() {
+          _liveAggregated = agg;
+        });
       }
     }
   }
@@ -5577,8 +5604,15 @@ class _DiseaseDistributionChartState extends State<DiseaseDistributionChart> {
             if (lower.contains('tip burn') || lower.contains('unknown'))
               continue;
 
+            // Normalize disease name for consistent matching (replace underscores/hyphens with spaces)
+            final normalized =
+                lower
+                    .replaceAll(RegExp(r'[_\-]+'), ' ')
+                    .replaceAll(RegExp(r'\s+'), ' ')
+                    .trim();
+
             // Add disease type to set (each report contributes 1 per disease type)
-            diseasesInReport.add(lower);
+            diseasesInReport.add(normalized);
           }
         }
 
@@ -5609,7 +5643,8 @@ class _DiseaseDistributionChartState extends State<DiseaseDistributionChart> {
               )
               .toList()
             ..sort((a, b) => b.value.compareTo(a.value));
-      final top = totals.take(4).map((e) => e.key).toList();
+      // Show all diseases (or up to 20 to avoid overcrowding)
+      final top = totals.take(20).map((e) => e.key).toList();
 
       final Map<String, List<double>> series = {};
       for (final name in top) {
@@ -6358,21 +6393,7 @@ class _DiseaseDistributionChartState extends State<DiseaseDistributionChart> {
                                                         BarChartAlignment
                                                             .spaceAround,
                                                     maxY:
-                                                        sortedDiseases.isEmpty
-                                                            ? 100.0
-                                                            : sortedDiseases
-                                                                    .map(
-                                                                      (d) =>
-                                                                          d['count']
-                                                                              .toDouble(),
-                                                                    )
-                                                                    .reduce(
-                                                                      (a, b) =>
-                                                                          a > b
-                                                                              ? a
-                                                                              : b,
-                                                                    ) *
-                                                                1.2,
+                                                        100.0, // Use fixed 100% scale for consistent comparison
                                                     barTouchData: BarTouchData(
                                                       enabled: true,
                                                       touchTooltipData: BarTouchTooltipData(
@@ -6496,84 +6517,13 @@ class _DiseaseDistributionChartState extends State<DiseaseDistributionChart> {
                                                           showTitles: true,
                                                           reservedSize: 40,
                                                           interval:
-                                                              (() {
-                                                                // Use the same maxY calculation as the chart
-                                                                final double
-                                                                chartMaxY =
-                                                                    sortedDiseases
-                                                                            .isEmpty
-                                                                        ? 100.0
-                                                                        : sortedDiseases
-                                                                                .map(
-                                                                                  (
-                                                                                    d,
-                                                                                  ) =>
-                                                                                      (d['count']
-                                                                                              as num)
-                                                                                          .toDouble(),
-                                                                                )
-                                                                                .reduce(
-                                                                                  (
-                                                                                    a,
-                                                                                    b,
-                                                                                  ) =>
-                                                                                      a >
-                                                                                              b
-                                                                                          ? a
-                                                                                          : b,
-                                                                                ) *
-                                                                            1.2;
-
-                                                                // Calculate interval based on chart's actual maxY
-                                                                if (chartMaxY <=
-                                                                    12)
-                                                                  return 2.0;
-                                                                if (chartMaxY <=
-                                                                    24)
-                                                                  return 5.0;
-                                                                if (chartMaxY <=
-                                                                    60)
-                                                                  return 10.0;
-                                                                if (chartMaxY <=
-                                                                    120)
-                                                                  return 25.0;
-                                                                if (chartMaxY <=
-                                                                    240)
-                                                                  return 50.0;
-                                                                if (chartMaxY <=
-                                                                    600)
-                                                                  return 100.0;
-                                                                if (chartMaxY <=
-                                                                    1200)
-                                                                  return 200.0;
-                                                                if (chartMaxY <=
-                                                                    2400)
-                                                                  return 500.0;
-                                                                if (chartMaxY <=
-                                                                    6000)
-                                                                  return 1000.0;
-                                                                if (chartMaxY <=
-                                                                    12000)
-                                                                  return 2000.0;
-                                                                if (chartMaxY <=
-                                                                    24000)
-                                                                  return 5000.0;
-                                                                if (chartMaxY <=
-                                                                    60000)
-                                                                  return 10000.0;
-                                                                // For extremely large numbers, use dynamic calculation
-                                                                return (chartMaxY /
-                                                                        5)
-                                                                    .ceilToDouble();
-                                                              })(),
+                                                              25.0, // Fixed interval for percentage scale (0, 25, 50, 75, 100)
                                                           getTitlesWidget: (
                                                             value,
                                                             meta,
                                                           ) {
                                                             return Text(
-                                                              value
-                                                                  .toInt()
-                                                                  .toString(),
+                                                              '${value.toInt()}%', // Show as percentage
                                                               style: TextStyle(
                                                                 color:
                                                                     Colors
@@ -6605,36 +6555,7 @@ class _DiseaseDistributionChartState extends State<DiseaseDistributionChart> {
                                                       show: true,
                                                       drawVerticalLine: false,
                                                       horizontalInterval:
-                                                          (() {
-                                                            final double
-                                                            maxVal =
-                                                                sortedDiseases
-                                                                        .isEmpty
-                                                                    ? 100
-                                                                    : sortedDiseases
-                                                                        .map(
-                                                                          (d) =>
-                                                                              (d['count']
-                                                                                      as num)
-                                                                                  .toDouble(),
-                                                                        )
-                                                                        .reduce(
-                                                                          (
-                                                                            a,
-                                                                            b,
-                                                                          ) =>
-                                                                              a > b
-                                                                                  ? a
-                                                                                  : b,
-                                                                        );
-                                                            if (maxVal <= 10)
-                                                              return 2.0;
-                                                            if (maxVal <= 20)
-                                                              return 5.0;
-                                                            if (maxVal <= 50)
-                                                              return 10.0;
-                                                            return 20.0;
-                                                          })(),
+                                                          25.0, // Fixed interval for percentage scale
                                                       getDrawingHorizontalLine: (
                                                         value,
                                                       ) {
@@ -6660,8 +6581,9 @@ class _DiseaseDistributionChartState extends State<DiseaseDistributionChart> {
                                                                 barRods: [
                                                                   BarChartRodData(
                                                                     toY:
-                                                                        disease['count']
-                                                                            .toDouble(),
+                                                                        (disease['percentage'] *
+                                                                                100)
+                                                                            .toDouble(), // Use percentage instead of count
                                                                     color: _getDiseaseColor(
                                                                       disease['name'],
                                                                     ),
@@ -6766,21 +6688,7 @@ class _DiseaseDistributionChartState extends State<DiseaseDistributionChart> {
                                                     BarChartAlignment
                                                         .spaceAround,
                                                 maxY:
-                                                    healthyData.isEmpty
-                                                        ? 100.0
-                                                        : healthyData
-                                                                .map(
-                                                                  (d) =>
-                                                                      d['count']
-                                                                          .toDouble(),
-                                                                )
-                                                                .reduce(
-                                                                  (a, b) =>
-                                                                      a > b
-                                                                          ? a
-                                                                          : b,
-                                                                ) *
-                                                            1.2,
+                                                    100.0, // Use fixed 100% scale for consistent comparison
                                                 barTouchData: BarTouchData(
                                                   enabled: true,
                                                   touchTooltipData: BarTouchTooltipData(
@@ -6903,72 +6811,13 @@ class _DiseaseDistributionChartState extends State<DiseaseDistributionChart> {
                                                       showTitles: true,
                                                       reservedSize: 40,
                                                       interval:
-                                                          (() {
-                                                            // Use the same maxY calculation as the chart
-                                                            final double
-                                                            chartMaxY =
-                                                                healthyData
-                                                                        .isEmpty
-                                                                    ? 100.0
-                                                                    : healthyData
-                                                                            .map(
-                                                                              (
-                                                                                d,
-                                                                              ) =>
-                                                                                  (d['count']
-                                                                                          as num)
-                                                                                      .toDouble(),
-                                                                            )
-                                                                            .reduce((a, b) => a > b ? a : b) *
-                                                                        1.2;
-
-                                                            // Calculate interval based on chart's actual maxY
-                                                            if (chartMaxY <= 12)
-                                                              return 2.0;
-                                                            if (chartMaxY <= 24)
-                                                              return 5.0;
-                                                            if (chartMaxY <= 60)
-                                                              return 10.0;
-                                                            if (chartMaxY <=
-                                                                120)
-                                                              return 25.0;
-                                                            if (chartMaxY <=
-                                                                240)
-                                                              return 50.0;
-                                                            if (chartMaxY <=
-                                                                600)
-                                                              return 100.0;
-                                                            if (chartMaxY <=
-                                                                1200)
-                                                              return 200.0;
-                                                            if (chartMaxY <=
-                                                                2400)
-                                                              return 500.0;
-                                                            if (chartMaxY <=
-                                                                6000)
-                                                              return 1000.0;
-                                                            if (chartMaxY <=
-                                                                12000)
-                                                              return 2000.0;
-                                                            if (chartMaxY <=
-                                                                24000)
-                                                              return 5000.0;
-                                                            if (chartMaxY <=
-                                                                60000)
-                                                              return 10000.0;
-                                                            // For extremely large numbers, use dynamic calculation
-                                                            return (chartMaxY /
-                                                                    5)
-                                                                .ceilToDouble();
-                                                          })(),
+                                                          25.0, // Fixed interval for percentage scale (0, 25, 50, 75, 100)
                                                       getTitlesWidget: (
                                                         value,
                                                         meta,
                                                       ) {
                                                         return Text(
-                                                          value
-                                                              .toInt()
-                                                              .toString(),
+                                                          '${value.toInt()}%', // Show as percentage
                                                           style: TextStyle(
                                                             color:
                                                                 Colors
@@ -6999,31 +6848,7 @@ class _DiseaseDistributionChartState extends State<DiseaseDistributionChart> {
                                                   show: true,
                                                   drawVerticalLine: false,
                                                   horizontalInterval:
-                                                      (() {
-                                                        final double maxVal =
-                                                            healthyData.isEmpty
-                                                                ? 100
-                                                                : healthyData
-                                                                    .map(
-                                                                      (d) =>
-                                                                          (d['count']
-                                                                                  as num)
-                                                                              .toDouble(),
-                                                                    )
-                                                                    .reduce(
-                                                                      (a, b) =>
-                                                                          a > b
-                                                                              ? a
-                                                                              : b,
-                                                                    );
-                                                        if (maxVal <= 10)
-                                                          return 2.0;
-                                                        if (maxVal <= 20)
-                                                          return 5.0;
-                                                        if (maxVal <= 50)
-                                                          return 10.0;
-                                                        return 20.0;
-                                                      })(),
+                                                      25.0, // Fixed interval for percentage scale
                                                   getDrawingHorizontalLine: (
                                                     value,
                                                   ) {
@@ -7048,8 +6873,9 @@ class _DiseaseDistributionChartState extends State<DiseaseDistributionChart> {
                                                             barRods: [
                                                               BarChartRodData(
                                                                 toY:
-                                                                    disease['count']
-                                                                        .toDouble(),
+                                                                    (disease['percentage'] *
+                                                                            100)
+                                                                        .toDouble(), // Use percentage instead of count
                                                                 color: _getDiseaseColor(
                                                                   disease['name'],
                                                                 ),

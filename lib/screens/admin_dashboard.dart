@@ -7,7 +7,6 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'reports.dart';
 import '../models/user_store.dart';
 import '../shared/total_users_card.dart';
-import '../shared/pending_approvals_card.dart';
 import '../shared/ratings_reviews_card.dart';
 import '../shared/ratings_reviews_modal.dart';
 import '../services/scan_requests_service.dart';
@@ -233,6 +232,9 @@ class _AdminDashboardState extends State<AdminDashboard>
     _currentAdminName =
         widget.adminUser.username; // Initialize with current name
     // Dashboard always shows current month - no need to load saved time range
+    // Load disease stats immediately for chart to display without delay
+    _loadDiseaseStats();
+    // Then load remaining data
     _loadData();
     _listenToAdminNameChanges(); // Listen for real-time updates
   }
@@ -275,13 +277,8 @@ class _AdminDashboardState extends State<AdminDashboard>
     });
 
     try {
-      // Load all data in parallel
-      await Future.wait([
-        _loadUsers(),
-        _loadStats(),
-        _loadReportsTrend(),
-        _loadDiseaseStats(),
-      ]);
+      // Load remaining data in parallel (disease stats already loaded in initState)
+      await Future.wait([_loadUsers(), _loadStats(), _loadReportsTrend()]);
     } catch (e) {
       print('Error loading dashboard data: $e');
     } finally {
@@ -441,25 +438,25 @@ class _AdminDashboardState extends State<AdminDashboard>
                 child: LayoutBuilder(
                   builder: (context, constraints) {
                     // Responsive grid: adjust columns based on available width
+                    // Now optimized for 3 cards instead of 4
                     int crossAxisCount;
                     double childAspectRatio;
                     final screenHeight = MediaQuery.of(context).size.height;
 
-                    // For smaller screens (like 18" monitors ~1366x768), use fewer columns and taller cards
+                    // For larger screens, use 3 columns to better distribute 3 cards
                     if (constraints.maxWidth > 1200 && screenHeight > 900) {
-                      crossAxisCount = 4;
-                      childAspectRatio = 1.7;
+                      crossAxisCount = 3;
+                      childAspectRatio = 1.5;
                     } else if (constraints.maxWidth > 900) {
-                      // For 18" monitors and similar small screens
-                      crossAxisCount = screenHeight < 800 ? 3 : 4;
-                      childAspectRatio =
-                          1.8; // Taller cards to prevent overflow
+                      // For medium screens
+                      crossAxisCount = screenHeight < 800 ? 3 : 3;
+                      childAspectRatio = 1.6;
                     } else if (constraints.maxWidth > 700) {
                       crossAxisCount = 3;
-                      childAspectRatio = 1.7;
+                      childAspectRatio = 1.5;
                     } else if (constraints.maxWidth > 500) {
                       crossAxisCount = 2;
-                      childAspectRatio = 1.6;
+                      childAspectRatio = 1.4;
                     } else {
                       crossAxisCount = 1;
                       childAspectRatio = 1.5;
@@ -469,9 +466,10 @@ class _AdminDashboardState extends State<AdminDashboard>
                       shrinkWrap: true,
                       physics: const NeverScrollableScrollPhysics(),
                       crossAxisCount: crossAxisCount,
-                      crossAxisSpacing: 12,
-                      mainAxisSpacing: 12,
+                      crossAxisSpacing: 16,
+                      mainAxisSpacing: 16,
                       childAspectRatio: childAspectRatio,
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
                       children: [
                         TotalUsersCard(
                           onTap: () {
@@ -480,7 +478,6 @@ class _AdminDashboardState extends State<AdminDashboard>
                             });
                           },
                         ),
-                        const PendingApprovalsCard(),
                         // Replace TotalReportsCard with TotalReportsReviewedCard
                         TotalReportsReviewedCard(
                           totalReports: _stats['totalReportsReviewed'],
@@ -555,6 +552,7 @@ class _AdminDashboardState extends State<AdminDashboard>
             DiseaseDistributionChart(
               diseaseStats: _diseaseStats,
               selectedTimeRange: _getCurrentMonthTimeRange(),
+              selectedCity: 'All', // Dashboard shows all cities
               onTimeRangeChanged:
                   null, // Disable time range change in dashboard
             ),

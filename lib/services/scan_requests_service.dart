@@ -179,7 +179,7 @@ class ScanRequestsService {
 
       // Aggregate disease data - count reports, not boxes
       final Map<String, int> diseaseCounts = {};
-      int totalReports = 0;
+      int totalDiseaseOccurrences = 0; // Sum of all disease counts
 
       for (final request in filteredRequests) {
         // Try different possible field names for disease data
@@ -232,17 +232,16 @@ class ScanRequestsService {
         // Count each disease type once per report
         for (final diseaseName in diseasesInReport) {
           diseaseCounts[diseaseName] = (diseaseCounts[diseaseName] ?? 0) + 1;
+          totalDiseaseOccurrences++; // Increment total occurrences
         }
-
-        // Total reports is the number of reports processed
-        totalReports++;
       }
 
       // Convert to list format with percentages
       final List<Map<String, dynamic>> diseaseStats = [];
 
       diseaseCounts.forEach((diseaseName, count) {
-        final percentage = totalReports > 0 ? count / totalReports : 0.0;
+        final percentage =
+            totalDiseaseOccurrences > 0 ? count / totalDiseaseOccurrences : 0.0;
         diseaseStats.add({
           'name': diseaseName,
           'count': count,

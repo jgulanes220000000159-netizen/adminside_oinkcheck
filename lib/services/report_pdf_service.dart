@@ -19,13 +19,14 @@ class ReportPdfService {
     // Fetch data needed for the report
     // Get all requests
     var allRequests = await ScanRequestsService.getScanRequests();
-    
+
     // Filter by city if not 'All'
     if (selectedCity != 'All') {
-      allRequests = allRequests.where((request) {
-        final city = (request['cityMunicipality'] ?? '').toString().trim();
-        return city.toLowerCase() == selectedCity.toLowerCase();
-      }).toList();
+      allRequests =
+          allRequests.where((request) {
+            final city = (request['cityMunicipality'] ?? '').toString().trim();
+            return city.toLowerCase() == selectedCity.toLowerCase();
+          }).toList();
     }
 
     // Determine reporting period for filtering by createdAt (when disease occurred)
@@ -161,8 +162,15 @@ class ReportPdfService {
           final lower = name.toLowerCase();
           if (lower.contains('tip burn') || lower.contains('unknown')) continue;
 
+          // Normalize disease name for consistent matching (replace underscores/hyphens with spaces)
+          final normalized =
+              lower
+                  .replaceAll(RegExp(r'[_\-]+'), ' ')
+                  .replaceAll(RegExp(r'\s+'), ' ')
+                  .trim();
+
           // Add disease type to set (each report contributes 1 per disease type)
-          diseasesInReport.add(name);
+          diseasesInReport.add(normalized);
         }
       }
 
@@ -228,12 +236,16 @@ class ReportPdfService {
 
     // Calculate total disease occurrences (sum of all disease counts)
     // Since a report can have multiple diseases, the sum can be > totalReports
-    final int totalDiseaseOccurrences = diseaseCounts.values.fold(0, (sum, count) => sum + count);
-    
+    final int totalDiseaseOccurrences = diseaseCounts.values.fold(
+      0,
+      (sum, count) => sum + count,
+    );
+
     diseaseCounts.forEach((name, count) {
       // Percentage is based on total disease occurrences, not total reports
       // This gives the proportion of each disease among all disease occurrences
-      final pct = totalDiseaseOccurrences > 0 ? count / totalDiseaseOccurrences : 0.0;
+      final pct =
+          totalDiseaseOccurrences > 0 ? count / totalDiseaseOccurrences : 0.0;
       diseaseStats.add({
         'name': name,
         'count': count,
@@ -308,8 +320,15 @@ class ReportPdfService {
             continue;
           }
 
+          // Normalize disease name for consistent matching (replace underscores/hyphens with spaces)
+          final normalized =
+              lower
+                  .replaceAll(RegExp(r'[_\-]+'), ' ')
+                  .replaceAll(RegExp(r'\s+'), ' ')
+                  .trim();
+
           // Add disease type to set (each report contributes 1 per disease type)
-          diseasesInReport.add(lower);
+          diseasesInReport.add(normalized);
         }
       }
 
@@ -405,7 +424,6 @@ class ReportPdfService {
     // Table styles are applied via _buildDiseaseTable parameters
     // Make charts compact but readable to fit executive summary and all content in 2 pages
     final double chartHeight = isSmall ? 70 : 85;
-    final int tableRows = isSmall ? 3 : 5;
 
     // If using a background template with embedded logos, we won't draw logos here
     final bool useBackground = backgroundAsset != null;
@@ -432,9 +450,9 @@ class ReportPdfService {
       },
     );
 
-    // Build disease multi-series for top 4 diseases
+    // Build disease multi-series for all diseases (not just top 4)
     final Map<String, List<double>> diseaseSeriesByName = {};
-    // Determine top 4 diseases by total counts
+    // Determine all diseases by total counts (sorted by count, descending)
     final List<MapEntry<String, int>> totals =
         diseaseDayCounts.entries
             .map(
@@ -451,7 +469,8 @@ class ReportPdfService {
                 e.key.contains('unknown'),
           )
           ..sort((a, b) => b.value.compareTo(a.value));
-    final topDiseases = totals.take(4).map((e) => e.key).toList();
+    // Show all diseases (or at least up to 10 to avoid overcrowding)
+    final topDiseases = totals.take(10).map((e) => e.key).toList();
     for (final name in topDiseases) {
       final perDay = diseaseDayCounts[name] ?? const <String, int>{};
       final series =
@@ -497,7 +516,7 @@ class ReportPdfService {
                 'Location:',
                 selectedCity != 'All'
                     ? '$selectedCity, Davao del Norte'
-                    : 'Barangay Cebulano, Carmen, Davao del Norte',
+                    : 'All Cities, Davao del Norte',
                 baseBody * scale,
                 font: baseFont,
                 boldFont: boldFont,
@@ -562,7 +581,7 @@ class ReportPdfService {
               pw.NewPage(),
 
               // === DISEASE SECTION ===
-              // Disease Trends chart (top 4 diseases)
+              // Disease Trends chart (all diseases)
               pw.SizedBox(height: isSmall ? 4 : 6),
               pw.Text('Disease Trends (Daily Percentages)', style: tsH2),
               pw.SizedBox(height: 3),
@@ -598,7 +617,8 @@ class ReportPdfService {
               _buildStatsTable(
                 diseaseOnlyStats,
                 firstColumnLabel: 'Disease',
-                maxRows: tableRows,
+                maxRows:
+                    20, // Show all diseases (increased from tableRows to avoid grouping as "Others")
                 fontSize: baseTable * scale,
                 font: baseFont,
                 boldFont: boldFont,
@@ -817,17 +837,19 @@ class ReportPdfService {
     pw.Font? font,
     pw.Font? boldFont,
   }) {
+    // Normalize and format disease names for display
     final normalized =
-        stats
-            .map(
-              (e) => {
-                'name': (e['name'] ?? 'Unknown').toString(),
-                'count': (e['count'] as num? ?? 0).toInt(),
-                'percentage': (e['percentage'] as double? ?? 0.0),
-                'trend': (e['trend'] ?? 'N/A').toString(),
-              },
-            )
-            .toList();
+        stats.map((e) {
+          String diseaseName = (e['name'] ?? 'Unknown').toString();
+          // Ensure disease name is properly formatted (title case for display)
+          // The name should already be normalized from earlier processing
+          return {
+            'name': _titleCase(diseaseName), // Format for display
+            'count': (e['count'] as num? ?? 0).toInt(),
+            'percentage': (e['percentage'] as double? ?? 0.0),
+            'trend': (e['trend'] ?? 'N/A').toString(),
+          };
+        }).toList();
     return _buildDiseaseTable(
       normalized,
       maxRows: maxRows,
@@ -1397,13 +1419,76 @@ class ReportPdfService {
   }
 
   static pdf.PdfColor _colorForDisease(String name) {
-    final n = name.toLowerCase();
-    if (n.contains('powdery')) return pdf.PdfColors.green; // Powdery Mildew
-    if (n.contains('anthracnose')) return pdf.PdfColors.orange; // Anthracnose
-    if (n.contains('bacterial') && n.contains('black'))
-      return pdf.PdfColors.purple; // Bacterial black spot
-    if (n.contains('dieback')) return pdf.PdfColors.red; // Dieback
-    return pdf.PdfColors.red; // default for any other disease
+    // Normalize common separators and whitespace
+    final normalized =
+        name
+            .toLowerCase()
+            .replaceAll(RegExp(r'[_\-]+'), ' ')
+            .replaceAll(RegExp(r'\s+'), ' ')
+            .trim();
+
+    // Handle display names and model labels - match the color scheme from reports.dart
+    // PDF colors use RGB values in 0-1 range
+    switch (normalized) {
+      // Healthy — Blue (#1E88E5)
+      case 'healthy':
+        return pdf.PdfColor(0x1E / 255, 0x88 / 255, 0xE5 / 255);
+
+      // Bacterial Erysipelas — Red (#E53935)
+      // Model label: infected_bacterial_erysipelas
+      case 'bacterial erysipelas':
+      case 'infected bacterial erysipelas':
+        return pdf.PdfColor(0xE5 / 255, 0x39 / 255, 0x35 / 255);
+
+      // Greasy Pig Disease — Orange (#FB8C00)
+      // Model label: infected_bacterial_greasy
+      case 'greasy pig disease':
+      case 'infected bacterial greasy':
+      case 'bacterial greasy':
+        return pdf.PdfColor(0xFB / 255, 0x8C / 255, 0x00 / 255);
+
+      // Sunburn — Yellow (#FDD835)
+      // Model label: infected_environmental_sunburn
+      case 'sunburn':
+      case 'infected environmental sunburn':
+      case 'environmental sunburn':
+        return pdf.PdfColor(0xFD / 255, 0xD8 / 255, 0x35 / 255);
+
+      // Ringworm — Purple (#8E24AA)
+      // Model label: infected_fungal_ringworm
+      case 'ringworm':
+      case 'infected fungal ringworm':
+      case 'fungal ringworm':
+        return pdf.PdfColor(0x8E / 255, 0x24 / 255, 0xAA / 255);
+
+      // Mange — Brown (#6D4C41)
+      // Model label: infected_parasitic_mange
+      case 'mange':
+      case 'infected parasitic mange':
+      case 'parasitic mange':
+        return pdf.PdfColor(0x6D / 255, 0x4C / 255, 0x41 / 255);
+
+      // Foot-and-Mouth Disease — Pink (#D81B60)
+      // Model label: infected_viral_foot_and_mouth
+      case 'foot and mouth disease':
+      case 'foot-and-mouth disease':
+      case 'infected viral foot and mouth':
+      case 'infected viral foot and mouth disease':
+        return pdf.PdfColor(0xD8 / 255, 0x1B / 255, 0x60 / 255);
+
+      // Swine Pox — Green (#43A047)
+      // Model label: swine_pox
+      case 'swine pox':
+      case 'swinepox':
+        return pdf.PdfColor(0x43 / 255, 0xA0 / 255, 0x47 / 255);
+
+      // Unknown — Grey (fallback)
+      case 'unknown':
+      case 'tip burn':
+      case 'tip_burn':
+      default:
+        return pdf.PdfColors.grey;
+    }
   }
 
   static String _healthyConclusion(List<double> series) {
