@@ -232,11 +232,14 @@ class _DiseaseMapWidgetState extends State<DiseaseMapWidget>
 
       // Process each completed report
       for (final data in completed) {
-        // Check both expertDiseaseSummary and diseaseSummary (like in reports page)
-        final rawSummary =
-            (data['expertDiseaseSummary'] as List?) ??
-            (data['diseaseSummary'] as List?) ??
-            const [];
+        // ONLY use expert-validated disease summary (skip reports without expert validation)
+        final expertDiseaseSummary = data['expertDiseaseSummary'];
+        if (expertDiseaseSummary == null ||
+            !(expertDiseaseSummary is List) ||
+            (expertDiseaseSummary as List).isEmpty) {
+          continue; // Skip reports that haven't been validated by an expert
+        }
+        final rawSummary = expertDiseaseSummary as List;
         final List<Map<String, dynamic>> cleaned = [];
         for (final e in rawSummary) {
           if (e is Map) cleaned.add(Map<String, dynamic>.from(e));

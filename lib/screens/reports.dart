@@ -4,7 +4,7 @@ import '../services/report_pdf_service.dart';
 // import '../services/settings_service.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../services/scan_requests_service.dart';
-import '../services/weather_service.dart';
+// import '../services/weather_service.dart'; // Commented out - weather summary removed
 // CSV export removed
 // duplicate import removed
 import 'admin_dashboard.dart' show ScanRequestsSnapshot;
@@ -328,16 +328,14 @@ class _ReportsState extends State<Reports> {
     final Map<String, int> diseaseCounts = {};
 
     for (final request in completed) {
-      List<dynamic> diseaseSummary = [];
-      if (request['diseaseSummary'] != null) {
-        diseaseSummary = request['diseaseSummary'] as List<dynamic>? ?? [];
-      } else if (request['diseases'] != null) {
-        diseaseSummary = request['diseases'] as List<dynamic>? ?? [];
-      } else if (request['detections'] != null) {
-        diseaseSummary = request['detections'] as List<dynamic>? ?? [];
-      } else if (request['results'] != null) {
-        diseaseSummary = request['results'] as List<dynamic>? ?? [];
+      // ONLY use expert-validated disease summary (skip reports without expert validation)
+      final expertDiseaseSummary = request['expertDiseaseSummary'];
+      if (expertDiseaseSummary == null ||
+          !(expertDiseaseSummary is List) ||
+          (expertDiseaseSummary as List).isEmpty) {
+        continue; // Skip reports that haven't been validated by an expert
       }
+      final diseaseSummary = expertDiseaseSummary as List<dynamic>;
 
       // Collect unique disease types in this report (each report counts as 1 per disease type)
       final Set<String> diseasesInReport = {};
@@ -4576,7 +4574,8 @@ class _ReportsListTableState extends State<ReportsListTable>
   }
 
   String _extractDisease(Map<String, dynamic> report) {
-    final ds = report['diseaseSummary'];
+    // Prefer expert-validated disease summary, fall back to ML model detection
+    final ds = report['expertDiseaseSummary'] ?? report['diseaseSummary'];
     if (ds is List && ds.isNotEmpty) {
       final first = ds.first;
       if (first is Map<String, dynamic>) {
@@ -5575,8 +5574,14 @@ class _DiseaseDistributionChartState extends State<DiseaseDistributionChart> {
         final key =
             '${dt.year}-${dt.month.toString().padLeft(2, '0')}-${dt.day.toString().padLeft(2, '0')}';
 
-        List<dynamic> diseaseSummary =
-            (r['diseaseSummary'] as List<dynamic>?) ?? const [];
+        // ONLY use expert-validated disease summary (skip reports without expert validation)
+        final expertDiseaseSummary = r['expertDiseaseSummary'];
+        if (expertDiseaseSummary == null ||
+            !(expertDiseaseSummary is List) ||
+            (expertDiseaseSummary as List).isEmpty) {
+          continue; // Skip reports that haven't been validated by an expert
+        }
+        final diseaseSummary = expertDiseaseSummary as List<dynamic>;
 
         // Collect unique disease types in this report (each report counts as 1 per disease type)
         final Set<String> diseasesInReport = {};
@@ -5986,8 +5991,15 @@ class _DiseaseDistributionChartState extends State<DiseaseDistributionChart> {
       if (created == null) continue;
       if (created.isBefore(start) || !created.isBefore(end)) continue;
 
+      // ONLY use expert-validated disease summary (skip reports without expert validation)
+      final expertDiseaseSummary = data['expertDiseaseSummary'];
+      if (expertDiseaseSummary == null ||
+          !(expertDiseaseSummary is List) ||
+          (expertDiseaseSummary as List).isEmpty) {
+        continue; // Skip reports that haven't been validated by an expert
+      }
       final List<dynamic> diseaseSummary =
-          (data['diseaseSummary'] as List<dynamic>?) ?? const [];
+          expertDiseaseSummary as List<dynamic>;
 
       // Collect unique disease types in this report (each report counts as 1 per disease type)
       final Set<String> diseasesInReport = {};
@@ -6077,32 +6089,32 @@ class _DiseaseDistributionChartState extends State<DiseaseDistributionChart> {
       case 'greasy pig disease':
       case 'infected bacterial greasy':
       case 'bacterial greasy':
-        return 'Greasy Pig Disease';
+        return 'greasy pig disease';
 
       case 'sunburn':
       case 'infected environmental sunburn':
       case 'environmental sunburn':
-        return 'Sunburn';
+        return 'sunburn';
 
       case 'ringworm':
       case 'infected fungal ringworm':
       case 'fungal ringworm':
-        return 'Ringworm';
+        return 'ringworm';
 
       case 'mange':
       case 'infected parasitic mange':
       case 'parasitic mange':
-        return 'Mange';
+        return 'mange';
 
       case 'foot and mouth disease':
       case 'foot-and-mouth disease':
       case 'infected viral foot and mouth':
       case 'infected viral foot and mouth disease':
-        return 'Foot-and-Mouth Disease';
+        return 'foot and mouth disease';
 
       case 'swine pox':
       case 'swinepox':
-        return 'Swine Pox';
+        return 'swine pox';
 
       case 'unknown':
       case 'tip burn':
@@ -8852,7 +8864,7 @@ class _GenerateReportDialogState extends State<GenerateReportDialog> {
                         ),
                         const SizedBox(height: 8),
                         const Text(
-                          'Includes: Disease Distribution, Healthy Trends, Weather Summary',
+                          'Includes: Disease Distribution, Healthy Trends',
                           style: TextStyle(
                             fontSize: 13,
                             color: Colors.teal,
@@ -9146,14 +9158,15 @@ class _GenerateReportDialogState extends State<GenerateReportDialog> {
                                 'Daily trends showing healthy vs diseased plant percentages over time.',
                             color: Colors.green,
                           ),
-                          const SizedBox(height: 10),
-                          _buildPreviewSection(
-                            icon: Icons.thermostat,
-                            title: 'Weather Summary',
-                            description:
-                                'Average temperature data for the selected period.',
-                            color: Colors.orange,
-                          ),
+                          // Weather Summary section removed
+                          // const SizedBox(height: 10),
+                          // _buildPreviewSection(
+                          //   icon: Icons.thermostat,
+                          //   title: 'Weather Summary',
+                          //   description:
+                          //       'Average temperature data for the selected period.',
+                          //   color: Colors.orange,
+                          // ),
                           const SizedBox(height: 10),
                           _buildPreviewSection(
                             icon: Icons.analytics,

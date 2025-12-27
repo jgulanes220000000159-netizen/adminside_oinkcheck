@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart' show rootBundle;
+// import 'package:flutter/services.dart' show rootBundle; // Commented out - template removed for now
 import 'package:pdf/widgets.dart' as pw;
 import 'package:pdf/pdf.dart' as pdf;
 import 'package:printing/printing.dart';
 import 'scan_requests_service.dart';
 // import 'settings_service.dart';
-import 'weather_service.dart';
+// import 'weather_service.dart'; // Commented out - weather summary removed for now
 
 class ReportPdfService {
   static Future<void> generateAndShareReport({
@@ -131,16 +131,14 @@ class ReportPdfService {
     // Build disease stats from validated data - count reports, not boxes
     final Map<String, int> diseaseCounts = {};
     for (final r in filteredCreatedCompleted) {
-      List<dynamic> diseaseSummary = [];
-      if (r['diseaseSummary'] != null) {
-        diseaseSummary = r['diseaseSummary'] as List<dynamic>? ?? [];
-      } else if (r['diseases'] != null) {
-        diseaseSummary = r['diseases'] as List<dynamic>? ?? [];
-      } else if (r['detections'] != null) {
-        diseaseSummary = r['detections'] as List<dynamic>? ?? [];
-      } else if (r['results'] != null) {
-        diseaseSummary = r['results'] as List<dynamic>? ?? [];
+      // ONLY use expert-validated disease summary (skip reports without expert validation)
+      final expertDiseaseSummary = r['expertDiseaseSummary'];
+      if (expertDiseaseSummary == null ||
+          !(expertDiseaseSummary is List) ||
+          (expertDiseaseSummary as List).isEmpty) {
+        continue; // Skip reports that haven't been validated by an expert
       }
+      final diseaseSummary = expertDiseaseSummary as List<dynamic>;
 
       // Collect unique disease types in this report (each report counts as 1 per disease type)
       final Set<String> diseasesInReport = {};
@@ -258,14 +256,14 @@ class ReportPdfService {
       (a, b) => (b['count'] as int).compareTo(a['count'] as int),
     );
 
-    // Fetch weather summary (avg/min/max temp) for range
-    final weather = await WeatherService.getAverageTemperature(
-      start: DateTime(startDate.year, startDate.month, startDate.day),
-      end: DateTime(endDate.year, endDate.month, endDate.day),
-    );
-    // If weather summary is entirely empty (e.g., API no data for a single day),
-    // use a safe label to avoid NaN formatting downstream
-    final String weatherLabel = weather.toLabel();
+    // Weather summary - commented out for now
+    // final weather = await WeatherService.getAverageTemperature(
+    //   start: DateTime(startDate.year, startDate.month, startDate.day),
+    //   end: DateTime(endDate.year, endDate.month, endDate.day),
+    // );
+    // // If weather summary is entirely empty (e.g., API no data for a single day),
+    // // use a safe label to avoid NaN formatting downstream
+    // final String weatherLabel = weather.toLabel();
     // Daily series for chart: separate disease vs healthy counts
     // Group by createdAt (when disease occurred)
     diseaseByDay = {};
@@ -283,16 +281,14 @@ class ReportPdfService {
           '${dt.year}-${dt.month.toString().padLeft(2, '0')}-${dt.day.toString().padLeft(2, '0')}';
 
       // Split detections into healthy vs disease for this day
-      List<dynamic> diseaseSummary = [];
-      if (r['diseaseSummary'] != null) {
-        diseaseSummary = r['diseaseSummary'] as List<dynamic>? ?? [];
-      } else if (r['diseases'] != null) {
-        diseaseSummary = r['diseases'] as List<dynamic>? ?? [];
-      } else if (r['detections'] != null) {
-        diseaseSummary = r['detections'] as List<dynamic>? ?? [];
-      } else if (r['results'] != null) {
-        diseaseSummary = r['results'] as List<dynamic>? ?? [];
+      // ONLY use expert-validated disease summary (skip reports without expert validation)
+      final expertDiseaseSummary = r['expertDiseaseSummary'];
+      if (expertDiseaseSummary == null ||
+          !(expertDiseaseSummary is List) ||
+          (expertDiseaseSummary as List).isEmpty) {
+        continue; // Skip reports that haven't been validated by an expert
       }
+      final diseaseSummary = expertDiseaseSummary as List<dynamic>;
 
       // Collect unique disease types in this report (each report counts as 1 per disease type per day)
       final Set<String> diseasesInReport = {};
@@ -393,7 +389,7 @@ class ReportPdfService {
 
     final now = DateTime.now();
     // Title without date range (moved to Reporting Period line)
-    final String title = 'Mango Disease Summary';
+    final String title = 'Pig Disease Summary';
 
     // Layout + unified typography
     final bool isSmall = pageSize.toLowerCase() == 'a5';
@@ -425,29 +421,32 @@ class ReportPdfService {
     // Make charts compact but readable to fit executive summary and all content in 2 pages
     final double chartHeight = isSmall ? 70 : 85;
 
+    // PDF Template/Background - commented out for now (can be re-enabled later)
     // If using a background template with embedded logos, we won't draw logos here
-    final bool useBackground = backgroundAsset != null;
-    final pw.ImageProvider? bgImage =
-        useBackground ? await _tryLoadLogo(backgroundAsset) : null;
+    // final bool useBackground = backgroundAsset != null;
+    // final pw.ImageProvider? bgImage =
+    //     useBackground ? await _tryLoadLogo(backgroundAsset) : null;
 
     final pw.PageTheme pageTheme = pw.PageTheme(
       pageFormat: _resolvePageFormat(pageSize),
-      margin:
-          bgImage == null
-              ? pw.EdgeInsets.all(margin)
-              : pw.EdgeInsets.fromLTRB(
-                isSmall ? 14 : 28,
-                isSmall ? 110 : 140,
-                isSmall ? 14 : 28,
-                isSmall ? 80 : 100,
-              ),
-      buildBackground: (context) {
-        if (bgImage == null) return pw.SizedBox();
-        return pw.FullPage(
-          ignoreMargins: true,
-          child: pw.Image(bgImage, fit: pw.BoxFit.cover),
-        );
-      },
+      margin: pw.EdgeInsets.all(margin), // Simplified margin (no template)
+      // Template background code - commented out for now
+      // margin:
+      //     bgImage == null
+      //         ? pw.EdgeInsets.all(margin)
+      //         : pw.EdgeInsets.fromLTRB(
+      //           isSmall ? 14 : 28,
+      //           isSmall ? 110 : 140,
+      //           isSmall ? 14 : 28,
+      //           isSmall ? 80 : 100,
+      //         ),
+      // buildBackground: (context) {
+      //   if (bgImage == null) return pw.SizedBox();
+      //   return pw.FullPage(
+      //     ignoreMargins: true,
+      //     child: pw.Image(bgImage, fit: pw.BoxFit.cover),
+      //   );
+      // },
     );
 
     // Build disease multi-series for all diseases (not just top 4)
@@ -521,13 +520,14 @@ class ReportPdfService {
                 font: baseFont,
                 boldFont: boldFont,
               ),
-              _labeledRow(
-                'Weather Summary:',
-                weatherLabel,
-                baseBody * scale,
-                font: baseFont,
-                boldFont: boldFont,
-              ),
+              // Weather Summary - commented out for now
+              // _labeledRow(
+              //   'Weather Summary:',
+              //   weatherLabel,
+              //   baseBody * scale,
+              //   font: baseFont,
+              //   boldFont: boldFont,
+              // ),
               pw.Divider(thickness: 0.7),
               pw.SizedBox(height: isSmall ? 3 : 4),
 
@@ -1264,14 +1264,15 @@ class ReportPdfService {
     return clean(base) + '.pdf';
   }
 
-  static Future<pw.ImageProvider?> _tryLoadLogo(String assetPath) async {
-    try {
-      final bytes = await rootBundle.load(assetPath);
-      return pw.MemoryImage(bytes.buffer.asUint8List());
-    } catch (_) {
-      return null;
-    }
-  }
+  // PDF Template loading function - commented out for now (can be re-enabled later)
+  // static Future<pw.ImageProvider?> _tryLoadLogo(String assetPath) async {
+  //   try {
+  //     final bytes = await rootBundle.load(assetPath);
+  //     return pw.MemoryImage(bytes.buffer.asUint8List());
+  //   } catch (_) {
+  //     return null;
+  //   }
+  // }
 
   static pw.Widget _labeledRow(
     String label,

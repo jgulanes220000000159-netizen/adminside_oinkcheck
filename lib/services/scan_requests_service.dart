@@ -56,6 +56,8 @@ class ScanRequestsService {
           'reviewedAt': data['reviewedAt'],
           'images': data['images'] ?? [],
           'diseaseSummary': data['diseaseSummary'] ?? [],
+          'expertDiseaseSummary':
+              data['expertDiseaseSummary'], // Expert-validated diseases
           'expertReview': data['expertReview'],
           'cityMunicipality': data['cityMunicipality'] ?? '',
           'province': data['province'] ?? '',
@@ -182,18 +184,14 @@ class ScanRequestsService {
       int totalDiseaseOccurrences = 0; // Sum of all disease counts
 
       for (final request in filteredRequests) {
-        // Try different possible field names for disease data
-        List<dynamic> diseaseSummary = [];
-
-        if (request['diseaseSummary'] != null) {
-          diseaseSummary = request['diseaseSummary'] as List<dynamic>? ?? [];
-        } else if (request['diseases'] != null) {
-          diseaseSummary = request['diseases'] as List<dynamic>? ?? [];
-        } else if (request['detections'] != null) {
-          diseaseSummary = request['detections'] as List<dynamic>? ?? [];
-        } else if (request['results'] != null) {
-          diseaseSummary = request['results'] as List<dynamic>? ?? [];
+        // ONLY use expert-validated disease summary (skip reports without expert validation)
+        final expertDiseaseSummary = request['expertDiseaseSummary'];
+        if (expertDiseaseSummary == null ||
+            !(expertDiseaseSummary is List) ||
+            (expertDiseaseSummary as List).isEmpty) {
+          continue; // Skip reports that haven't been validated by an expert
         }
+        final diseaseSummary = expertDiseaseSummary as List<dynamic>;
 
         // Collect unique disease types in this report (each report counts as 1 per disease type)
         final Set<String> diseasesInReport = {};

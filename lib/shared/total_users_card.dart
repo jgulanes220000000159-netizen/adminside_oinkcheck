@@ -173,19 +173,60 @@ class _TotalReportsReviewedCardState extends State<TotalReportsReviewedCard> {
     final String normalized =
         raw.replaceAll(RegExp(r'[_\-]+'), ' ').trim().toLowerCase();
 
-    // Fix common spelling issues
-    if (normalized == 'backterial b' ||
-        normalized == 'backterial blackspot' ||
-        normalized == 'bacterial b') {
-      return 'bacterial_blackspot';
-    }
+    // Map to display names matching the legend (all lowercase except Healthy)
+    switch (normalized) {
+      case 'healthy':
+        return 'Healthy';
 
-    // Map all tip burn variants to Unknown
-    if (normalized == 'tip burn' || normalized == 'tipburn') {
-      return 'Unknown';
-    }
+      case 'swine pox':
+      case 'swinepox':
+        return 'swine pox';
 
-    return raw;
+      case 'ringworm':
+      case 'infected fungal ringworm':
+      case 'fungal ringworm':
+        return 'ringworm';
+
+      case 'foot and mouth disease':
+      case 'foot-and-mouth disease':
+      case 'infected viral foot and mouth':
+      case 'infected viral foot and mouth disease':
+        return 'foot and mouth disease';
+
+      case 'mange':
+      case 'infected parasitic mange':
+      case 'parasitic mange':
+        return 'mange';
+
+      case 'sunburn':
+      case 'infected environmental sunburn':
+      case 'environmental sunburn':
+        return 'sunburn';
+
+      case 'greasy pig disease':
+      case 'infected bacterial greasy':
+      case 'bacterial greasy':
+        return 'greasy pig disease';
+
+      case 'bacterial erysipelas':
+      case 'infected bacterial erysipelas':
+        return 'bacterial erysipelas';
+
+      // Fix common spelling issues
+      case 'backterial b':
+      case 'backterial blackspot':
+      case 'bacterial b':
+        return 'bacterial erysipelas';
+
+      // Map all tip burn variants to Unknown
+      case 'tip burn':
+      case 'tipburn':
+      case 'unknown':
+        return 'Unknown';
+
+      default:
+        return raw;
+    }
   }
 
   Color _colorForDisease(String disease) {
@@ -525,7 +566,10 @@ class _TotalReportsReviewedCardState extends State<TotalReportsReviewedCard> {
               onTap: widget.onTap ?? () => _showReportsModal(context),
               borderRadius: BorderRadius.circular(12),
               child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 14,
+                ),
                 child: child, // Use the child below
               ),
             ),
@@ -797,8 +841,49 @@ class _TotalReportsReviewedCardState extends State<TotalReportsReviewedCard> {
     final createdAt = report['createdAt'];
     final reviewedAt = report['reviewedAt'];
     final images = report['images'] ?? [];
-    final diseaseSummary = report['diseaseSummary'] ?? [];
+    // Get both ML detection and expert validation for comparison
+    final mlDiseaseSummary = report['diseaseSummary'] ?? [];
+    final expertDiseaseSummary = report['expertDiseaseSummary'];
+    // Use expert-validated if available, otherwise use ML detection
+    final diseaseSummary = expertDiseaseSummary ?? mlDiseaseSummary;
     final expertReview = report['expertReview'];
+    final hasExpertValidation =
+        expertDiseaseSummary != null &&
+        expertDiseaseSummary is List &&
+        (expertDiseaseSummary as List).isNotEmpty;
+
+    // Helper function to normalize disease lists for comparison
+    bool areDiseaseListsEqual(List<dynamic> list1, List<dynamic> list2) {
+      if (list1.length != list2.length) return false;
+      final normalized1 =
+          list1.map((d) {
+            if (d is Map)
+              return (d['label'] ?? d['name'] ?? d['disease'] ?? '')
+                  .toString()
+                  .toLowerCase();
+            return d.toString().toLowerCase();
+          }).toSet();
+      final normalized2 =
+          list2.map((d) {
+            if (d is Map)
+              return (d['label'] ?? d['name'] ?? d['disease'] ?? '')
+                  .toString()
+                  .toLowerCase();
+            return d.toString().toLowerCase();
+          }).toSet();
+      return normalized1.length == normalized2.length &&
+          normalized1.every((item) => normalized2.contains(item));
+    }
+
+    // Check if expert made actual changes (not just copied ML detection)
+    final mlList =
+        mlDiseaseSummary is List ? (mlDiseaseSummary as List) : <dynamic>[];
+    final expertList =
+        expertDiseaseSummary is List
+            ? (expertDiseaseSummary as List)
+            : <dynamic>[];
+    final expertMadeChanges =
+        hasExpertValidation && !areDiseaseListsEqual(mlList, expertList);
 
     String _monthShort(int m) =>
         const [
@@ -1117,10 +1202,149 @@ class _TotalReportsReviewedCardState extends State<TotalReportsReviewedCard> {
               const SizedBox(height: 12),
             ],
 
-            // Disease Summary
-            if (diseaseSummary.isNotEmpty) ...[
+            // ML Detected Diseases (always show if available, for comparison)
+            if (mlDiseaseSummary is List &&
+                (mlDiseaseSummary as List).isNotEmpty) ...[
               const Text(
-                'Detected Diseases:',
+                'ML Detected Diseases:',
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.grey,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 8,
+                runSpacing: 4,
+                children:
+                    (mlDiseaseSummary as List).map<Widget>((disease) {
+                      final diseaseName = _fixDiseaseName(
+                        (disease is Map
+                                ? (disease['name'] ??
+                                    disease['label'] ??
+                                    'Unknown')
+                                : disease.toString())
+                            .toString(),
+                      );
+                      final count =
+                          disease is Map ? (disease['count'] ?? 0) : 0;
+                      final confidence =
+                          disease is Map ? disease['confidence'] : null;
+
+                      String displayText;
+                      if (confidence != null) {
+                        displayText =
+                            '$diseaseName (${(confidence * 100).toStringAsFixed(1)}%)';
+                      } else {
+                        displayText =
+                            '$diseaseName (${count} detection${count != 1 ? 's' : ''})';
+                      }
+
+                      return Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 4,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.grey.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: Colors.grey.withOpacity(0.3),
+                          ),
+                        ),
+                        child: Text(
+                          displayText,
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.grey[700],
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      );
+                    }).toList(),
+              ),
+              const SizedBox(height: 12),
+            ],
+
+            // Expert Summary (this is what the farmer sees) - always show if expert validated
+            if (hasExpertValidation) ...[
+              Row(
+                children: [
+                  const Icon(Icons.verified, color: Colors.green, size: 16),
+                  const SizedBox(width: 4),
+                  Expanded(
+                    child: Text(
+                      expertMadeChanges
+                          ? 'Expert Summary (Farmer Sees This):'
+                          : 'Expert Summary (No Changes - Same as ML):',
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                        color: expertMadeChanges ? Colors.green : Colors.orange,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 8,
+                runSpacing: 4,
+                children:
+                    (expertDiseaseSummary as List).map<Widget>((disease) {
+                      final diseaseName = _fixDiseaseName(
+                        (disease is Map
+                                ? (disease['name'] ??
+                                    disease['label'] ??
+                                    'Unknown')
+                                : disease.toString())
+                            .toString(),
+                      );
+                      final count =
+                          disease is Map ? (disease['count'] ?? 0) : 0;
+                      final confidence =
+                          disease is Map ? disease['confidence'] : null;
+
+                      String displayText;
+                      if (confidence != null) {
+                        displayText =
+                            '$diseaseName (${(confidence * 100).toStringAsFixed(1)}%)';
+                      } else {
+                        displayText =
+                            '$diseaseName (${count} detection${count != 1 ? 's' : ''})';
+                      }
+
+                      return Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 4,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.green.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: Colors.green.withOpacity(0.3),
+                          ),
+                        ),
+                        child: Text(
+                          displayText,
+                          style: const TextStyle(
+                            fontSize: 12,
+                            color: Colors.green,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      );
+                    }).toList(),
+              ),
+              const SizedBox(height: 12),
+            ] else if (mlDiseaseSummary is List &&
+                (mlDiseaseSummary as List).isNotEmpty &&
+                !hasExpertValidation) ...[
+              // Show ML detected diseases if no expert validation yet
+              const Text(
+                'ML Detected Diseases:',
                 style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
               ),
               const SizedBox(height: 8),
@@ -1128,12 +1352,19 @@ class _TotalReportsReviewedCardState extends State<TotalReportsReviewedCard> {
                 spacing: 8,
                 runSpacing: 4,
                 children:
-                    diseaseSummary.map<Widget>((disease) {
+                    (mlDiseaseSummary as List).map<Widget>((disease) {
                       final diseaseName = _fixDiseaseName(
-                        (disease['name'] ?? 'Unknown').toString(),
+                        (disease is Map
+                                ? (disease['name'] ??
+                                    disease['label'] ??
+                                    'Unknown')
+                                : disease.toString())
+                            .toString(),
                       );
-                      final count = disease['count'] ?? 0;
-                      final confidence = disease['confidence'];
+                      final count =
+                          disease is Map ? (disease['count'] ?? 0) : 0;
+                      final confidence =
+                          disease is Map ? disease['confidence'] : null;
 
                       String displayText;
                       if (confidence != null) {
@@ -2092,19 +2323,60 @@ class _ReportsModalContentState extends State<ReportsModalContent>
     final String normalized =
         raw.replaceAll(RegExp(r'[_\-]+'), ' ').trim().toLowerCase();
 
-    // Fix common spelling issues
-    if (normalized == 'backterial b' ||
-        normalized == 'backterial blackspot' ||
-        normalized == 'bacterial b') {
-      return 'bacterial_blackspot';
-    }
+    // Map to display names matching the legend (all lowercase except Healthy)
+    switch (normalized) {
+      case 'healthy':
+        return 'Healthy';
 
-    // Map all tip burn variants to Unknown
-    if (normalized == 'tip burn' || normalized == 'tipburn') {
-      return 'Unknown';
-    }
+      case 'swine pox':
+      case 'swinepox':
+        return 'swine pox';
 
-    return raw;
+      case 'ringworm':
+      case 'infected fungal ringworm':
+      case 'fungal ringworm':
+        return 'ringworm';
+
+      case 'foot and mouth disease':
+      case 'foot-and-mouth disease':
+      case 'infected viral foot and mouth':
+      case 'infected viral foot and mouth disease':
+        return 'foot and mouth disease';
+
+      case 'mange':
+      case 'infected parasitic mange':
+      case 'parasitic mange':
+        return 'mange';
+
+      case 'sunburn':
+      case 'infected environmental sunburn':
+      case 'environmental sunburn':
+        return 'sunburn';
+
+      case 'greasy pig disease':
+      case 'infected bacterial greasy':
+      case 'bacterial greasy':
+        return 'greasy pig disease';
+
+      case 'bacterial erysipelas':
+      case 'infected bacterial erysipelas':
+        return 'bacterial erysipelas';
+
+      // Fix common spelling issues
+      case 'backterial b':
+      case 'backterial blackspot':
+      case 'bacterial b':
+        return 'bacterial erysipelas';
+
+      // Map all tip burn variants to Unknown
+      case 'tip burn':
+      case 'tipburn':
+      case 'unknown':
+        return 'Unknown';
+
+      default:
+        return raw;
+    }
   }
 
   List<Widget> _buildRecommendationsList(dynamic recommendations) {
@@ -2191,8 +2463,11 @@ class _ReportsModalContentState extends State<ReportsModalContent>
   List<String> _computeDiseaseOptions(List<Map<String, dynamic>> reports) {
     final Set<String> diseaseSet = {};
     for (final report in reports) {
+      // Prefer expert-validated disease summary, fall back to ML model detection
       final List<dynamic> diseaseSummary =
-          (report['diseaseSummary'] as List<dynamic>?) ?? const [];
+          (report['expertDiseaseSummary'] as List<dynamic>?) ??
+          (report['diseaseSummary'] as List<dynamic>?) ??
+          const [];
       for (final dynamic disease in diseaseSummary) {
         if (disease is Map<String, dynamic>) {
           final String name = _fixDiseaseName(
@@ -2271,8 +2546,11 @@ class _ReportsModalContentState extends State<ReportsModalContent>
         reports.where((report) {
           final String userName =
               (report['userName'] ?? '').toString().toLowerCase();
+          // Prefer expert-validated disease summary, fall back to ML model detection
           final List<dynamic> diseaseSummary =
-              (report['diseaseSummary'] as List<dynamic>?) ?? const [];
+              (report['expertDiseaseSummary'] as List<dynamic>?) ??
+              (report['diseaseSummary'] as List<dynamic>?) ??
+              const [];
           final dynamic expertReview = report['expertReview'];
           String expertName = '';
           if (expertReview is Map<String, dynamic>) {
@@ -2780,8 +3058,49 @@ class _ReportsModalContentState extends State<ReportsModalContent>
     final createdAt = report['createdAt'];
     final reviewedAt = report['reviewedAt'];
     final images = report['images'] ?? [];
-    final diseaseSummary = report['diseaseSummary'] ?? [];
+    // Get both ML detection and expert validation for comparison
+    final mlDiseaseSummary = report['diseaseSummary'] ?? [];
+    final expertDiseaseSummary = report['expertDiseaseSummary'];
+    // Use expert-validated if available, otherwise use ML detection
+    final diseaseSummary = expertDiseaseSummary ?? mlDiseaseSummary;
     final expertReview = report['expertReview'];
+    final hasExpertValidation =
+        expertDiseaseSummary != null &&
+        expertDiseaseSummary is List &&
+        (expertDiseaseSummary as List).isNotEmpty;
+
+    // Helper function to normalize disease lists for comparison
+    bool areDiseaseListsEqual(List<dynamic> list1, List<dynamic> list2) {
+      if (list1.length != list2.length) return false;
+      final normalized1 =
+          list1.map((d) {
+            if (d is Map)
+              return (d['label'] ?? d['name'] ?? d['disease'] ?? '')
+                  .toString()
+                  .toLowerCase();
+            return d.toString().toLowerCase();
+          }).toSet();
+      final normalized2 =
+          list2.map((d) {
+            if (d is Map)
+              return (d['label'] ?? d['name'] ?? d['disease'] ?? '')
+                  .toString()
+                  .toLowerCase();
+            return d.toString().toLowerCase();
+          }).toSet();
+      return normalized1.length == normalized2.length &&
+          normalized1.every((item) => normalized2.contains(item));
+    }
+
+    // Check if expert made actual changes (not just copied ML detection)
+    final mlList =
+        mlDiseaseSummary is List ? (mlDiseaseSummary as List) : <dynamic>[];
+    final expertList =
+        expertDiseaseSummary is List
+            ? (expertDiseaseSummary as List)
+            : <dynamic>[];
+    final expertMadeChanges =
+        hasExpertValidation && !areDiseaseListsEqual(mlList, expertList);
 
     return Card(
       margin: const EdgeInsets.only(bottom: 16),
@@ -3094,10 +3413,149 @@ class _ReportsModalContentState extends State<ReportsModalContent>
               const SizedBox(height: 12),
             ],
 
-            // Disease Summary
-            if (diseaseSummary.isNotEmpty) ...[
+            // ML Detected Diseases (always show if available, for comparison)
+            if (mlDiseaseSummary is List &&
+                (mlDiseaseSummary as List).isNotEmpty) ...[
               const Text(
-                'Detected Diseases:',
+                'ML Detected Diseases:',
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.grey,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 8,
+                runSpacing: 4,
+                children:
+                    (mlDiseaseSummary as List).map<Widget>((disease) {
+                      final diseaseName = _fixDiseaseName(
+                        (disease is Map
+                                ? (disease['name'] ??
+                                    disease['label'] ??
+                                    'Unknown')
+                                : disease.toString())
+                            .toString(),
+                      );
+                      final count =
+                          disease is Map ? (disease['count'] ?? 0) : 0;
+                      final confidence =
+                          disease is Map ? disease['confidence'] : null;
+
+                      String displayText;
+                      if (confidence != null) {
+                        displayText =
+                            '$diseaseName (${(confidence * 100).toStringAsFixed(1)}%)';
+                      } else {
+                        displayText =
+                            '$diseaseName (${count} detection${count != 1 ? 's' : ''})';
+                      }
+
+                      return Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 4,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.grey.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: Colors.grey.withOpacity(0.3),
+                          ),
+                        ),
+                        child: Text(
+                          displayText,
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.grey[700],
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      );
+                    }).toList(),
+              ),
+              const SizedBox(height: 12),
+            ],
+
+            // Expert Summary (this is what the farmer sees) - always show if expert validated
+            if (hasExpertValidation) ...[
+              Row(
+                children: [
+                  const Icon(Icons.verified, color: Colors.green, size: 16),
+                  const SizedBox(width: 4),
+                  Expanded(
+                    child: Text(
+                      expertMadeChanges
+                          ? 'Expert Summary (Farmer Sees This):'
+                          : 'Expert Summary (No Changes - Same as ML):',
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                        color: expertMadeChanges ? Colors.green : Colors.orange,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 8,
+                runSpacing: 4,
+                children:
+                    (expertDiseaseSummary as List).map<Widget>((disease) {
+                      final diseaseName = _fixDiseaseName(
+                        (disease is Map
+                                ? (disease['name'] ??
+                                    disease['label'] ??
+                                    'Unknown')
+                                : disease.toString())
+                            .toString(),
+                      );
+                      final count =
+                          disease is Map ? (disease['count'] ?? 0) : 0;
+                      final confidence =
+                          disease is Map ? disease['confidence'] : null;
+
+                      String displayText;
+                      if (confidence != null) {
+                        displayText =
+                            '$diseaseName (${(confidence * 100).toStringAsFixed(1)}%)';
+                      } else {
+                        displayText =
+                            '$diseaseName (${count} detection${count != 1 ? 's' : ''})';
+                      }
+
+                      return Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 4,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.green.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: Colors.green.withOpacity(0.3),
+                          ),
+                        ),
+                        child: Text(
+                          displayText,
+                          style: const TextStyle(
+                            fontSize: 12,
+                            color: Colors.green,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      );
+                    }).toList(),
+              ),
+              const SizedBox(height: 12),
+            ] else if (mlDiseaseSummary is List &&
+                (mlDiseaseSummary as List).isNotEmpty &&
+                !hasExpertValidation) ...[
+              // Show ML detected diseases if no expert validation yet
+              const Text(
+                'ML Detected Diseases:',
                 style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
               ),
               const SizedBox(height: 8),
@@ -3105,12 +3563,19 @@ class _ReportsModalContentState extends State<ReportsModalContent>
                 spacing: 8,
                 runSpacing: 4,
                 children:
-                    diseaseSummary.map<Widget>((disease) {
+                    (mlDiseaseSummary as List).map<Widget>((disease) {
                       final diseaseName = _fixDiseaseName(
-                        (disease['name'] ?? 'Unknown').toString(),
+                        (disease is Map
+                                ? (disease['name'] ??
+                                    disease['label'] ??
+                                    'Unknown')
+                                : disease.toString())
+                            .toString(),
                       );
-                      final count = disease['count'] ?? 0;
-                      final confidence = disease['confidence'];
+                      final count =
+                          disease is Map ? (disease['count'] ?? 0) : 0;
+                      final confidence =
+                          disease is Map ? disease['confidence'] : null;
 
                       String displayText;
                       if (confidence != null) {
@@ -4282,7 +4747,10 @@ class _TotalUsersCardState extends State<TotalUsersCard> {
               onTap: widget.onTap,
               borderRadius: BorderRadius.circular(12),
               child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 14,
+                ),
                 child: child, // Use the child below
               ),
             ),
@@ -4311,8 +4779,19 @@ class _TotalUsersCardState extends State<TotalUsersCard> {
                 }
                 final docs = usersSnapshot.docs;
                 final totalUsers = docs.length;
-                final pendingUsers =
-                    docs.where((doc) => doc['status'] == 'pending').length;
+                // Count users by role
+                final farmerCount =
+                    docs.where((doc) {
+                      final role = (doc['role'] ?? '').toString().toLowerCase();
+                      return role == 'farmer';
+                    }).length;
+                final expertCount =
+                    docs.where((doc) {
+                      final role = (doc['role'] ?? '').toString().toLowerCase();
+                      return role == 'expert' ||
+                          role == 'head_veterinarian' ||
+                          role == 'machine_learning_expert';
+                    }).length;
                 return Column(
                   children: [
                     Text(
@@ -4348,7 +4827,7 @@ class _TotalUsersCardState extends State<TotalUsersCard> {
                         const SizedBox(width: 4),
                         Flexible(
                           child: Text(
-                            '${totalUsers - pendingUsers} Active',
+                            '$farmerCount Farmers',
                             style: const TextStyle(
                               fontSize: 11,
                               color: Colors.grey,
@@ -4361,14 +4840,14 @@ class _TotalUsersCardState extends State<TotalUsersCard> {
                           width: 6,
                           height: 6,
                           decoration: const BoxDecoration(
-                            color: Colors.orange,
+                            color: Colors.blue,
                             shape: BoxShape.circle,
                           ),
                         ),
                         const SizedBox(width: 4),
                         Flexible(
                           child: Text(
-                            '$pendingUsers Pending',
+                            '$expertCount Experts',
                             style: const TextStyle(
                               fontSize: 11,
                               color: Colors.grey,

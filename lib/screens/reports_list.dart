@@ -64,8 +64,11 @@ class ReportsListScreen extends StatelessWidget {
                   rows:
                       reports.map((report) {
                         // Extract a display disease name from possible structures
+                        // Prefer expert-validated disease summary, fall back to ML model detection
                         String disease = '';
-                        final ds = report['diseaseSummary'];
+                        final ds =
+                            report['expertDiseaseSummary'] ??
+                            report['diseaseSummary'];
                         if (ds is List && ds.isNotEmpty) {
                           final first = ds.first;
                           if (first is Map<String, dynamic>) {
