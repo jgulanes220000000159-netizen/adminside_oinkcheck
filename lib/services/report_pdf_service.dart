@@ -55,6 +55,49 @@ class ReportPdfService {
           endDate = nowForRange;
           startDate = endDate.subtract(const Duration(days: 7));
           break;
+        case 'Last Month':
+          final prevMonth = nowForRange.month == 1 ? 12 : nowForRange.month - 1;
+          final prevYear = nowForRange.month == 1 ? nowForRange.year - 1 : nowForRange.year;
+          startDate = DateTime(prevYear, prevMonth, 1);
+          endDate = DateTime(nowForRange.year, nowForRange.month, 1);
+          break;
+        case 'All Time':
+          // For All Time, calculate from completed reports
+          final completedReports = allRequests
+              .where((r) => (r['status'] ?? '').toString() == 'completed')
+              .toList();
+          if (completedReports.isNotEmpty) {
+            DateTime? earliestDate;
+            DateTime? latestDate;
+            for (final r in completedReports) {
+              final createdAtRaw = r['createdAt'];
+              DateTime? createdAt;
+              if (createdAtRaw is String) {
+                createdAt = DateTime.tryParse(createdAtRaw);
+              } else if (createdAtRaw.runtimeType.toString() == 'Timestamp') {
+                createdAt = createdAtRaw.toDate();
+              }
+              if (createdAt != null) {
+                if (earliestDate == null || createdAt.isBefore(earliestDate)) {
+                  earliestDate = createdAt;
+                }
+                if (latestDate == null || createdAt.isAfter(latestDate)) {
+                  latestDate = createdAt;
+                }
+              }
+            }
+            if (earliestDate != null && latestDate != null) {
+              startDate = DateTime(earliestDate.year, earliestDate.month, earliestDate.day);
+              endDate = DateTime(latestDate.year, latestDate.month, latestDate.day);
+            } else {
+              endDate = nowForRange;
+              startDate = endDate.subtract(const Duration(days: 30));
+            }
+          } else {
+            endDate = nowForRange;
+            startDate = endDate.subtract(const Duration(days: 30));
+          }
+          break;
         case 'Last 30 Days':
           endDate = nowForRange;
           startDate = endDate.subtract(const Duration(days: 30));

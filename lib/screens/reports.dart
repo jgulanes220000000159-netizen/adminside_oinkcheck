@@ -30,7 +30,7 @@ class Reports extends StatefulWidget {
 }
 
 class _ReportsState extends State<Reports> {
-  String _selectedTimeRange = 'Last 7 Days';
+  String _selectedTimeRange = 'Last Month';
   String _selectedCity = 'All'; // City filter for reports page
   bool _isLoading = true;
   Future<List<Map<String, dynamic>>>?
@@ -534,6 +534,47 @@ class _ReportsState extends State<Reports> {
           startInclusive = now.subtract(const Duration(days: 7));
           endExclusive = now;
           break;
+        case 'Last Month':
+          // Calculate previous month (e.g., January -> December)
+          final prevMonth = now.month == 1 ? 12 : now.month - 1;
+          final prevYear = now.month == 1 ? now.year - 1 : now.year;
+          startInclusive = DateTime(prevYear, prevMonth, 1);
+          endExclusive = DateTime(now.year, now.month, 1);
+          break;
+        case 'All Time':
+          // Get all completed reports and find first and last
+          final completedReports = scanRequests
+              .where((r) => (r['status'] ?? '').toString() == 'completed')
+              .toList();
+          if (completedReports.isNotEmpty) {
+            DateTime? earliestDate;
+            DateTime? latestDate;
+            for (final r in completedReports) {
+              final createdAtRaw = r['createdAt'];
+              DateTime? createdAt;
+              if (createdAtRaw is Timestamp) createdAt = createdAtRaw.toDate();
+              if (createdAtRaw is String) createdAt = DateTime.tryParse(createdAtRaw);
+              if (createdAt != null) {
+                if (earliestDate == null || createdAt.isBefore(earliestDate)) {
+                  earliestDate = createdAt;
+                }
+                if (latestDate == null || createdAt.isAfter(latestDate)) {
+                  latestDate = createdAt;
+                }
+              }
+            }
+            if (earliestDate != null && latestDate != null) {
+              startInclusive = DateTime(earliestDate.year, earliestDate.month, earliestDate.day);
+              endExclusive = DateTime(latestDate.year, latestDate.month, latestDate.day).add(const Duration(days: 1));
+            } else {
+              startInclusive = now.subtract(const Duration(days: 30));
+              endExclusive = now;
+            }
+          } else {
+            startInclusive = now.subtract(const Duration(days: 30));
+            endExclusive = now;
+          }
+          break;
         case 'Last 30 Days':
           startInclusive = now.subtract(const Duration(days: 30));
           endExclusive = now;
@@ -551,8 +592,11 @@ class _ReportsState extends State<Reports> {
           endExclusive = now;
           break;
         default:
-          startInclusive = now.subtract(const Duration(days: 7));
-          endExclusive = now;
+          // Default to Last Month instead of Last 7 Days
+          final prevMonth = now.month == 1 ? 12 : now.month - 1;
+          final prevYear = now.month == 1 ? now.year - 1 : now.year;
+          startInclusive = DateTime(prevYear, prevMonth, 1);
+          endExclusive = DateTime(now.year, now.month, 1);
       }
     }
 
@@ -1040,6 +1084,45 @@ class _ReportsState extends State<Reports> {
             startInclusive = now.subtract(const Duration(days: 7));
             endExclusive = now;
             break;
+          case 'Last Month':
+            final prevMonth = now.month == 1 ? 12 : now.month - 1;
+            final prevYear = now.month == 1 ? now.year - 1 : now.year;
+            startInclusive = DateTime(prevYear, prevMonth, 1);
+            endExclusive = DateTime(now.year, now.month, 1);
+            break;
+          case 'All Time':
+            final completedReports = cityFiltered
+                .where((r) => (r['status'] ?? '').toString() == 'completed')
+                .toList();
+            if (completedReports.isNotEmpty) {
+              DateTime? earliestDate;
+              DateTime? latestDate;
+              for (final r in completedReports) {
+                final createdAtRaw = r['createdAt'];
+                DateTime? createdAt;
+                if (createdAtRaw is Timestamp) createdAt = createdAtRaw.toDate();
+                if (createdAtRaw is String) createdAt = DateTime.tryParse(createdAtRaw);
+                if (createdAt != null) {
+                  if (earliestDate == null || createdAt.isBefore(earliestDate)) {
+                    earliestDate = createdAt;
+                  }
+                  if (latestDate == null || createdAt.isAfter(latestDate)) {
+                    latestDate = createdAt;
+                  }
+                }
+              }
+              if (earliestDate != null && latestDate != null) {
+                startInclusive = DateTime(earliestDate.year, earliestDate.month, earliestDate.day);
+                endExclusive = DateTime(latestDate.year, latestDate.month, latestDate.day).add(const Duration(days: 1));
+              } else {
+                startInclusive = now.subtract(const Duration(days: 30));
+                endExclusive = now;
+              }
+            } else {
+              startInclusive = now.subtract(const Duration(days: 30));
+              endExclusive = now;
+            }
+            break;
           case 'Last 30 Days':
             startInclusive = now.subtract(const Duration(days: 30));
             endExclusive = now;
@@ -1057,8 +1140,10 @@ class _ReportsState extends State<Reports> {
             endExclusive = now;
             break;
           default:
-            startInclusive = now.subtract(const Duration(days: 7));
-            endExclusive = now;
+            final prevMonth = now.month == 1 ? 12 : now.month - 1;
+            final prevYear = now.month == 1 ? now.year - 1 : now.year;
+            startInclusive = DateTime(prevYear, prevMonth, 1);
+            endExclusive = DateTime(now.year, now.month, 1);
         }
       }
       int completed = 0;
@@ -1259,7 +1344,8 @@ class _ReportsState extends State<Reports> {
                           underline: const SizedBox.shrink(),
                           items:
                               (<String>[
-                                    'Last 7 Days',
+                                    'Last Month',
+                                    'All Time',
                                     'Monthly…',
                                     'Custom…',
                                   ]..addAll(
@@ -1768,6 +1854,45 @@ class _ReportsState extends State<Reports> {
                                 );
                                 endExclusive = now;
                                 break;
+                              case 'Last Month':
+                                final prevMonth = now.month == 1 ? 12 : now.month - 1;
+                                final prevYear = now.month == 1 ? now.year - 1 : now.year;
+                                startInclusive = DateTime(prevYear, prevMonth, 1);
+                                endExclusive = DateTime(now.year, now.month, 1);
+                                break;
+                              case 'All Time':
+                                final completedReports = cityFiltered
+                                    .where((r) => (r['status'] ?? '').toString() == 'completed')
+                                    .toList();
+                                if (completedReports.isNotEmpty) {
+                                  DateTime? earliestDate;
+                                  DateTime? latestDate;
+                                  for (final r in completedReports) {
+                                    final createdAtRaw = r['createdAt'];
+                                    DateTime? createdAt;
+                                    if (createdAtRaw is Timestamp) createdAt = createdAtRaw.toDate();
+                                    if (createdAtRaw is String) createdAt = DateTime.tryParse(createdAtRaw);
+                                    if (createdAt != null) {
+                                      if (earliestDate == null || createdAt.isBefore(earliestDate)) {
+                                        earliestDate = createdAt;
+                                      }
+                                      if (latestDate == null || createdAt.isAfter(latestDate)) {
+                                        latestDate = createdAt;
+                                      }
+                                    }
+                                  }
+                                  if (earliestDate != null && latestDate != null) {
+                                    startInclusive = DateTime(earliestDate.year, earliestDate.month, earliestDate.day);
+                                    endExclusive = DateTime(latestDate.year, latestDate.month, latestDate.day).add(const Duration(days: 1));
+                                  } else {
+                                    startInclusive = now.subtract(const Duration(days: 30));
+                                    endExclusive = now;
+                                  }
+                                } else {
+                                  startInclusive = now.subtract(const Duration(days: 30));
+                                  endExclusive = now;
+                                }
+                                break;
                               case 'Last 30 Days':
                                 startInclusive = now.subtract(
                                   const Duration(days: 30),
@@ -1795,10 +1920,10 @@ class _ReportsState extends State<Reports> {
                                 endExclusive = now;
                                 break;
                               default:
-                                startInclusive = now.subtract(
-                                  const Duration(days: 7),
-                                );
-                                endExclusive = now;
+                                final prevMonth = now.month == 1 ? 12 : now.month - 1;
+                                final prevYear = now.month == 1 ? now.year - 1 : now.year;
+                                startInclusive = DateTime(prevYear, prevMonth, 1);
+                                endExclusive = DateTime(now.year, now.month, 1);
                             }
                           }
                           int completed = 0;
@@ -5376,6 +5501,19 @@ class _DiseaseDistributionChartState extends State<DiseaseDistributionChart> {
           start: now.subtract(const Duration(days: 7)),
           end: now,
         );
+      case 'Last Month':
+        final prevMonth = now.month == 1 ? 12 : now.month - 1;
+        final prevYear = now.month == 1 ? now.year - 1 : now.year;
+        return DateTimeRange(
+          start: DateTime(prevYear, prevMonth, 1),
+          end: DateTime(now.year, now.month, 1),
+        );
+      case 'All Time':
+        // Return a very wide range - actual filtering will be done by service methods
+        return DateTimeRange(
+          start: DateTime(2000, 1, 1),
+          end: now,
+        );
       case 'Last 30 Days':
         return DateTimeRange(
           start: now.subtract(const Duration(days: 30)),
@@ -5397,9 +5535,11 @@ class _DiseaseDistributionChartState extends State<DiseaseDistributionChart> {
           end: now,
         );
       default:
+        final prevMonth = now.month == 1 ? 12 : now.month - 1;
+        final prevYear = now.month == 1 ? now.year - 1 : now.year;
         return DateTimeRange(
-          start: now.subtract(const Duration(days: 7)),
-          end: now,
+          start: DateTime(prevYear, prevMonth, 1),
+          end: DateTime(now.year, now.month, 1),
         );
     }
   }
@@ -6207,6 +6347,173 @@ class _DiseaseDistributionChartState extends State<DiseaseDistributionChart> {
     }
   }
 
+  /// Get farmers with a specific disease
+  Future<List<Map<String, dynamic>>> _getFarmersWithDisease(String diseaseName) async {
+    try {
+      final allRequests = await ScanRequestsService.getScanRequests();
+      
+      // Filter by city if not 'All'
+      var filtered = allRequests;
+      if (widget.selectedCity != 'All') {
+        filtered = filtered.where((request) {
+          final city = (request['cityMunicipality'] ?? '').toString().trim();
+          return city.toLowerCase() == widget.selectedCity.toLowerCase();
+        }).toList();
+      }
+
+      // Filter by time range
+      filtered = ScanRequestsService.filterByTimeRange(
+        filtered,
+        widget.selectedTimeRange,
+      );
+
+      // Get date range for filtering
+      final now = DateTime.now();
+      DateTime startInclusive;
+      DateTime endExclusive;
+      
+      if (widget.selectedTimeRange.startsWith('Custom (') ||
+          widget.selectedTimeRange.startsWith('Monthly (')) {
+        final regex = RegExp(
+          r'(?:Custom|Monthly) \((\d{4}-\d{2}-\d{2}) to (\d{4}-\d{2}-\d{2})\)',
+        );
+        final match = regex.firstMatch(widget.selectedTimeRange);
+        if (match != null) {
+          final s = DateTime.parse(match.group(1)!);
+          final e = DateTime.parse(match.group(2)!);
+          startInclusive = DateTime(s.year, s.month, s.day);
+          endExclusive = DateTime(e.year, e.month, e.day).add(const Duration(days: 1));
+        } else {
+          final prevMonth = now.month == 1 ? 12 : now.month - 1;
+          final prevYear = now.month == 1 ? now.year - 1 : now.year;
+          startInclusive = DateTime(prevYear, prevMonth, 1);
+          endExclusive = DateTime(now.year, now.month, 1);
+        }
+      } else {
+        switch (widget.selectedTimeRange) {
+          case 'Last Month':
+            final prevMonth = now.month == 1 ? 12 : now.month - 1;
+            final prevYear = now.month == 1 ? now.year - 1 : now.year;
+            startInclusive = DateTime(prevYear, prevMonth, 1);
+            endExclusive = DateTime(now.year, now.month, 1);
+            break;
+          case 'All Time':
+            // For All Time, get ALL completed reports (not filtered) to find first and last
+            final allCompletedReports = allRequests
+                .where((r) => (r['status'] ?? '').toString() == 'completed')
+                .toList();
+            if (allCompletedReports.isNotEmpty) {
+              DateTime? earliestDate;
+              DateTime? latestDate;
+              for (final r in allCompletedReports) {
+                final createdAtRaw = r['createdAt'];
+                DateTime? createdAt;
+                if (createdAtRaw is Timestamp) createdAt = createdAtRaw.toDate();
+                if (createdAtRaw is String) createdAt = DateTime.tryParse(createdAtRaw);
+                if (createdAt != null) {
+                  if (earliestDate == null || createdAt.isBefore(earliestDate)) {
+                    earliestDate = createdAt;
+                  }
+                  if (latestDate == null || createdAt.isAfter(latestDate)) {
+                    latestDate = createdAt;
+                  }
+                }
+              }
+              if (earliestDate != null && latestDate != null) {
+                startInclusive = DateTime(earliestDate.year, earliestDate.month, earliestDate.day);
+                endExclusive = DateTime(latestDate.year, latestDate.month, latestDate.day).add(const Duration(days: 1));
+              } else {
+                // Fallback: use a very wide range
+                startInclusive = DateTime(2000, 1, 1);
+                endExclusive = now;
+              }
+            } else {
+              // No completed reports, use a very wide range
+              startInclusive = DateTime(2000, 1, 1);
+              endExclusive = now;
+            }
+            break;
+          default:
+            final prevMonth = now.month == 1 ? 12 : now.month - 1;
+            final prevYear = now.month == 1 ? now.year - 1 : now.year;
+            startInclusive = DateTime(prevYear, prevMonth, 1);
+            endExclusive = DateTime(now.year, now.month, 1);
+        }
+      }
+
+      // Normalize disease name for comparison
+      final normalizedDiseaseName = diseaseName.toLowerCase().trim();
+      
+      // Filter by disease and get unique farmers
+      final Map<String, Map<String, dynamic>> uniqueFarmers = {};
+      
+      for (final request in filtered) {
+        final status = (request['status'] ?? '').toString();
+        if (status != 'completed') continue;
+
+        // For "All Time", skip date filtering since filterByTimeRange already handled it
+        // For other ranges, apply additional date check
+        if (widget.selectedTimeRange != 'All Time') {
+          // Check createdAt is in range
+          final createdAtRaw = request['createdAt'];
+          DateTime? createdAt;
+          if (createdAtRaw is Timestamp) createdAt = createdAtRaw.toDate();
+          if (createdAtRaw is String) createdAt = DateTime.tryParse(createdAtRaw);
+          if (createdAt == null) continue;
+          if (createdAt.isBefore(startInclusive) || !createdAt.isBefore(endExclusive)) continue;
+        }
+
+        // Check expert disease summary
+        final expertDiseaseSummary = request['expertDiseaseSummary'];
+        if (expertDiseaseSummary == null || !(expertDiseaseSummary is List)) continue;
+        
+        final diseaseSummary = expertDiseaseSummary as List<dynamic>;
+        bool hasDisease = false;
+        
+        for (final d in diseaseSummary) {
+          if (d is Map<String, dynamic>) {
+            final rawName = (d['name'] ?? d['label'] ?? d['disease'] ?? '').toString();
+            final normalized = _getDiseaseDisplayName(rawName).toLowerCase().trim();
+            if (normalized == normalizedDiseaseName) {
+              hasDisease = true;
+              break;
+            }
+          }
+        }
+        
+        if (hasDisease) {
+          final userName = (request['userName'] ?? 'Unknown').toString();
+          final userId = (request['userId'] ?? '').toString();
+          final key = '$userId|$userName';
+          
+          if (!uniqueFarmers.containsKey(key)) {
+            uniqueFarmers[key] = {
+              'userName': userName,
+              'cityMunicipality': (request['cityMunicipality'] ?? '').toString(),
+              'province': (request['province'] ?? '').toString(),
+              'barangay': (request['barangay'] ?? '').toString(),
+            };
+          }
+        }
+      }
+      
+      return uniqueFarmers.values.toList();
+    } catch (e) {
+      return [];
+    }
+  }
+
+  /// Show modal with farmer details
+  void _showFarmerDetailsModal(BuildContext context, String diseaseName) {
+    showDialog(
+      context: context,
+      builder: (context) => _FarmerDetailsDialog(
+        diseaseName: diseaseName,
+        getFarmers: _getFarmersWithDisease,
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     // Build-scoped immutable lists using live data when available
@@ -6436,6 +6743,15 @@ class _DiseaseDistributionChartState extends State<DiseaseDistributionChart> {
                                                           );
                                                         },
                                                       ),
+                                                      touchCallback: (FlTouchEvent event, barTouchResponse) {
+                                                        if (barTouchResponse?.spot == null) return;
+                                                        if (event is FlTapUpEvent) {
+                                                          final groupIndex = barTouchResponse!.spot!.touchedBarGroupIndex;
+                                                          if (groupIndex < 0 || groupIndex >= sortedDiseases.length) return;
+                                                          final disease = sortedDiseases[groupIndex];
+                                                          _showFarmerDetailsModal(context, disease['name']);
+                                                        }
+                                                      },
                                                     ),
                                                     titlesData: FlTitlesData(
                                                       show: true,
@@ -6943,13 +7259,198 @@ class _DiseaseDistributionChartState extends State<DiseaseDistributionChart> {
   // Trend feedback removed per request
 }
 
+/// Dialog to show farmer details for a specific disease
+class _FarmerDetailsDialog extends StatefulWidget {
+  final String diseaseName;
+  final Future<List<Map<String, dynamic>>> Function(String) getFarmers;
+
+  const _FarmerDetailsDialog({
+    required this.diseaseName,
+    required this.getFarmers,
+  });
+
+  @override
+  State<_FarmerDetailsDialog> createState() => _FarmerDetailsDialogState();
+}
+
+class _FarmerDetailsDialogState extends State<_FarmerDetailsDialog> {
+  List<Map<String, dynamic>> _farmers = [];
+  bool _loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadFarmers();
+  }
+
+  Future<void> _loadFarmers() async {
+    setState(() {
+      _loading = true;
+    });
+    try {
+      final farmers = await widget.getFarmers(widget.diseaseName);
+      setState(() {
+        _farmers = farmers;
+        _loading = false;
+      });
+    } catch (e) {
+      setState(() {
+        _loading = false;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Container(
+        width: MediaQuery.of(context).size.width * 0.9,
+        height: MediaQuery.of(context).size.height * 0.7,
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Expanded(
+                  child: Text(
+                    'Farmers with ${widget.diseaseName}',
+                    style: const TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.close),
+                  onPressed: () => Navigator.of(context).pop(),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            if (_loading)
+              const Expanded(
+                child: Center(child: CircularProgressIndicator()),
+              )
+            else if (_farmers.isEmpty)
+              Expanded(
+                child: Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.people_outline, size: 64, color: Colors.grey[400]),
+                      const SizedBox(height: 16),
+                      Text(
+                        'No farmers found',
+                        style: TextStyle(
+                          fontSize: 16,
+                          color: Colors.grey[600],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              )
+            else
+              Expanded(
+                child: ListView.builder(
+                  physics: const AlwaysScrollableScrollPhysics(),
+                  shrinkWrap: true,
+                  itemCount: _farmers.length,
+                  padding: const EdgeInsets.only(bottom: 8),
+                  itemBuilder: (context, index) {
+                    final farmer = _farmers[index];
+                    final city = (farmer['cityMunicipality'] ?? '').toString();
+                    final province = (farmer['province'] ?? '').toString();
+                    final barangay = (farmer['barangay'] ?? '').toString();
+                    
+                    String address = '';
+                    if (barangay.isNotEmpty) address += barangay;
+                    if (city.isNotEmpty) {
+                      if (address.isNotEmpty) address += ', ';
+                      address += city;
+                    }
+                    if (province.isNotEmpty) {
+                      if (address.isNotEmpty) address += ', ';
+                      address += province;
+                    }
+                    if (address.isEmpty) address = 'Address not available';
+
+                    return Card(
+                      margin: const EdgeInsets.only(bottom: 12),
+                      elevation: 2,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: ListTile(
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 8,
+                        ),
+                        leading: CircleAvatar(
+                          backgroundColor: Colors.green[100],
+                          child: Icon(
+                            Icons.person,
+                            color: Colors.green[700],
+                          ),
+                        ),
+                        title: Text(
+                          farmer['userName'] ?? 'Unknown',
+                          style: const TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 16,
+                          ),
+                        ),
+                        subtitle: Padding(
+                          padding: const EdgeInsets.only(top: 4),
+                          child: Row(
+                            children: [
+                              Icon(Icons.location_on, size: 16, color: Colors.grey[600]),
+                              const SizedBox(width: 4),
+                              Expanded(
+                                child: Text(
+                                  address,
+                                  style: TextStyle(
+                                    fontSize: 14,
+                                    color: Colors.grey[700],
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
+            const SizedBox(height: 8),
+            Text(
+              'Total: ${_farmers.length} farmer${_farmers.length != 1 ? 's' : ''}',
+              style: TextStyle(
+                fontSize: 14,
+                color: Colors.grey[600],
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class ReportsTrendDialog extends StatefulWidget {
   @override
   State<ReportsTrendDialog> createState() => _ReportsTrendDialogState();
 }
 
 class _ReportsTrendDialogState extends State<ReportsTrendDialog> {
-  String _selectedTimeRange = 'Last 7 Days';
+  String _selectedTimeRange = 'Last Month';
   List<Map<String, dynamic>> _trendData = [];
   bool _loading = true;
   String? _error;
@@ -7133,7 +7634,7 @@ class _ReportsTrendDialogState extends State<ReportsTrendDialog> {
                     DropdownButton<String>(
                       value: _selectedTimeRange,
                       items:
-                          ['Last 7 Days', 'Custom…']
+                          ['Last Month', 'All Time', 'Custom…']
                               .map(
                                 (range) => DropdownMenuItem(
                                   value: range,
@@ -7555,6 +8056,45 @@ class _AvgResponseTimeModalState extends State<AvgResponseTimeModal> {
           startInclusive = now.subtract(const Duration(days: 7));
           endExclusive = now;
           break;
+        case 'Last Month':
+          final prevMonth = now.month == 1 ? 12 : now.month - 1;
+          final prevYear = now.month == 1 ? now.year - 1 : now.year;
+          startInclusive = DateTime(prevYear, prevMonth, 1);
+          endExclusive = DateTime(now.year, now.month, 1);
+          break;
+        case 'All Time':
+          final completedReports = scanRequests
+              .where((r) => (r['status'] ?? '').toString() == 'completed')
+              .toList();
+          if (completedReports.isNotEmpty) {
+            DateTime? earliestDate;
+            DateTime? latestDate;
+            for (final r in completedReports) {
+              final createdAtRaw = r['createdAt'];
+              DateTime? createdAt;
+              if (createdAtRaw is Timestamp) createdAt = createdAtRaw.toDate();
+              if (createdAtRaw is String) createdAt = DateTime.tryParse(createdAtRaw);
+              if (createdAt != null) {
+                if (earliestDate == null || createdAt.isBefore(earliestDate)) {
+                  earliestDate = createdAt;
+                }
+                if (latestDate == null || createdAt.isAfter(latestDate)) {
+                  latestDate = createdAt;
+                }
+              }
+            }
+            if (earliestDate != null && latestDate != null) {
+              startInclusive = DateTime(earliestDate.year, earliestDate.month, earliestDate.day);
+              endExclusive = DateTime(latestDate.year, latestDate.month, latestDate.day).add(const Duration(days: 1));
+            } else {
+              startInclusive = now.subtract(const Duration(days: 30));
+              endExclusive = now;
+            }
+          } else {
+            startInclusive = now.subtract(const Duration(days: 30));
+            endExclusive = now;
+          }
+          break;
         case 'Last 30 Days':
           startInclusive = now.subtract(const Duration(days: 30));
           endExclusive = now;
@@ -7572,8 +8112,10 @@ class _AvgResponseTimeModalState extends State<AvgResponseTimeModal> {
           endExclusive = now;
           break;
         default:
-          startInclusive = now.subtract(const Duration(days: 7));
-          endExclusive = now;
+          final prevMonth = now.month == 1 ? 12 : now.month - 1;
+          final prevYear = now.month == 1 ? now.year - 1 : now.year;
+          startInclusive = DateTime(prevYear, prevMonth, 1);
+          endExclusive = DateTime(now.year, now.month, 1);
       }
     }
     final Map<String, List<Map<String, dynamic>>> expertGroups = {};
@@ -8460,7 +9002,7 @@ class GenerateReportDialog extends StatefulWidget {
 }
 
 class _GenerateReportDialogState extends State<GenerateReportDialog> {
-  String _selectedRange = 'Last 7 Days';
+  String _selectedRange = 'Last Month';
   DateTime? _customStart;
   DateTime? _customEnd;
   String _selectedCity = 'All';
@@ -8474,9 +9016,14 @@ class _GenerateReportDialogState extends State<GenerateReportDialog> {
       'desc': 'Reports from the last 24 hours.',
     },
     {
-      'label': 'Last 7 Days',
-      'icon': Icons.calendar_view_week,
-      'desc': 'Reports from the last 7 days.',
+      'label': 'Last Month',
+      'icon': Icons.calendar_view_month,
+      'desc': 'Reports from the previous month.',
+    },
+    {
+      'label': 'All Time',
+      'icon': Icons.history,
+      'desc': 'Reports from the first completed report to the last.',
     },
     {
       'label': 'Last 30 Days',
@@ -8713,7 +9260,8 @@ class _GenerateReportDialogState extends State<GenerateReportDialog> {
                   _ranges
                       .where(
                         (r) =>
-                            r['label'] == 'Last 7 Days' ||
+                            r['label'] == 'Last Month' ||
+                            r['label'] == 'All Time' ||
                             r['label'] == 'Monthly…' ||
                             r['label'] == 'Custom…',
                       )

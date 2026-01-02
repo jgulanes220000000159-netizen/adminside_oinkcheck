@@ -4,6 +4,7 @@ import 'package:flutter_map_cancellable_tile_provider/flutter_map_cancellable_ti
 import 'package:latlong2/latlong.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
+import 'dart:math' as math;
 import '../services/scan_requests_service.dart';
 
 // Geocoding service for city coordinates
@@ -80,6 +81,7 @@ class _DiseaseMapWidgetState extends State<DiseaseMapWidget>
     with AutomaticKeepAliveClientMixin {
   final MapController _mapController = MapController();
   List<Marker> _markers = [];
+  List<CircleMarker> _heatmapCircles = [];
   String? _selectedDisease;
   bool _isLoading = true;
 
@@ -192,9 +194,10 @@ class _DiseaseMapWidgetState extends State<DiseaseMapWidget>
   }
 
   Future<void> _loadDiseaseLocations() async {
-    // Clear markers immediately to avoid showing stale data
+    // Clear markers and heatmap circles immediately to avoid showing stale data
     setState(() {
       _markers = [];
+      _heatmapCircles = [];
       _isLoading = true;
     });
 
@@ -389,8 +392,15 @@ class _DiseaseMapWidgetState extends State<DiseaseMapWidget>
         }
       }
 
-      // Create markers - only for cities that match ALL filters
-      final markers = <Marker>[];
+      // Create heatmap circles - only for cities that match ALL filters
+      final heatmapCircles = <CircleMarker>[];
+      final markers = <Marker>[]; // Keep markers for click interaction
+
+      // Fixed absolute thresholds
+      const int lowThreshold = 20; // Low: 1-20 cases
+      const int mediumThreshold = 50; // Medium: 21-50 cases
+      // High: 51+ cases
+
       for (final a in agg.values) {
         // Must have coordinates
         if (a.lat == null || a.lng == null) continue;
@@ -404,8 +414,6 @@ class _DiseaseMapWidgetState extends State<DiseaseMapWidget>
           if (a.diseaseKey != _selectedDisease) {
             continue; // Skip - this aggregation doesn't have the selected disease
           }
-          // Additional verification: count should only be > 0 if disease matches
-          // (This should always be true due to our filtering logic, but double-check)
         }
 
         // Final safety check: only show markers for the selected city
@@ -417,15 +425,66 @@ class _DiseaseMapWidgetState extends State<DiseaseMapWidget>
         }
 
         final count = a.count;
-        final severityColor = _severityColor(count);
-        // Fixed pin size - all pins are the same size regardless of count
-        const double pinSize = 32.0;
 
+        // Calculate intensity based on fixed thresholds (for color gradient)
+        double intensity; // 0.0 to 1.0 for color gradient
+
+        if (count <= lowThreshold) {
+          // Low: 1-20 cases
+          // Normalize within low range: 1 case = 0.0, 20 cases = 0.33
+          intensity = (count / lowThreshold) * 0.33;
+        } else if (count <= mediumThreshold) {
+          // Medium: 21-50 cases
+          // Normalize within medium range: 21 cases = 0.33, 50 cases = 0.67
+          intensity =
+              0.33 +
+              ((count - lowThreshold) / (mediumThreshold - lowThreshold)) *
+                  0.34;
+        } else {
+          // High: 51+ cases
+          // Normalize within high range: 51 cases = 0.67, cap at 1.0 for very high counts
+          final excess = count - mediumThreshold;
+          intensity = 0.67 + (math.min(excess / 100.0, 1.0) * 0.33);
+        }
+
+        // Calculate circle size based on count category
+        double radius;
+        if (count <= lowThreshold) {
+          // Low: 1km to 3km
+          radius = 1000.0 + ((count / lowThreshold) * 2000.0);
+        } else if (count <= mediumThreshold) {
+          // Medium: 3km to 6km
+          radius =
+              3000.0 +
+              (((count - lowThreshold) / (mediumThreshold - lowThreshold)) *
+                  3000.0);
+        } else {
+          // High: 6km to 10km (capped)
+          final excess = count - mediumThreshold;
+          radius = 6000.0 + (math.min(excess / 50.0, 1.0) * 4000.0);
+        }
+
+        // Get heatmap color based on intensity
+        final heatmapColor = _getHeatmapColor(intensity);
+
+        // Create heatmap circle (solid color, no opacity)
+        heatmapCircles.add(
+          CircleMarker(
+            point: LatLng(a.lat!, a.lng!),
+            radius: radius,
+            color: heatmapColor, // Solid color, no opacity
+            borderColor: heatmapColor,
+            borderStrokeWidth: 2.0,
+            useRadiusInMeter: true,
+          ),
+        );
+
+        // Create invisible marker for click interaction
         markers.add(
           Marker(
             point: LatLng(a.lat!, a.lng!),
-            width: pinSize,
-            height: pinSize,
+            width: 40,
+            height: 40,
             child: GestureDetector(
               onTap: () {
                 _showMarkerInfo(
@@ -435,10 +494,10 @@ class _DiseaseMapWidgetState extends State<DiseaseMapWidget>
                   province: a.province,
                 );
               },
-              child: Icon(
-                Icons.location_pin,
-                color: severityColor,
-                size: pinSize,
+              child: Container(
+                color: Colors.transparent,
+                width: 40,
+                height: 40,
               ),
             ),
           ),
@@ -446,6 +505,7 @@ class _DiseaseMapWidgetState extends State<DiseaseMapWidget>
       }
 
       setState(() {
+        _heatmapCircles = heatmapCircles;
         _markers = markers;
         _isLoading = false;
       });
@@ -478,7 +538,7 @@ class _DiseaseMapWidgetState extends State<DiseaseMapWidget>
           (context) => AlertDialog(
             title: Text(_getDiseaseDisplayName(diseaseKey)),
             content: Text(
-              'Location: $city, $province\nCases: $count\nSeverity: ${_getSeverityLabel(count)}',
+              'Location: $city, $province\nCases: $count\nIntensity: ${_getIntensityLabelFromCount(count)}',
               style: const TextStyle(fontSize: 16),
             ),
             actions: [
@@ -501,6 +561,61 @@ class _DiseaseMapWidgetState extends State<DiseaseMapWidget>
     if (count >= 51) return Colors.red;
     if (count >= 21) return Colors.orange;
     return Colors.green;
+  }
+
+  /// Get heatmap color based on intensity (0.0 to 1.0)
+  /// Returns gradient from green (low) -> yellow (medium) -> red (high)
+  ///
+  /// Fixed Absolute Thresholds:
+  /// - Low (Green): 1-20 cases
+  /// - Medium (Yellow): 21-50 cases
+  /// - High (Red): 51+ cases
+  Color _getHeatmapColor(double intensity) {
+    if (intensity <= 0.0) return const Color(0xFF4CAF50); // Green
+    if (intensity >= 1.0) return const Color(0xFFF44336); // Red
+
+    // Define thresholds for Low/Medium/High
+    const lowThreshold = 0.33; // 0.0 to 0.33 = Low (Green)
+    const mediumThreshold = 0.67; // 0.33 to 0.67 = Medium (Yellow)
+    // 0.67 to 1.0 = High (Red)
+
+    if (intensity < lowThreshold) {
+      // Low: Green to Light Green (0.0 to 0.33)
+      final t = intensity / lowThreshold; // Scale to 0.0-1.0
+      return Color.lerp(
+        const Color(0xFF4CAF50), // Green
+        const Color(0xFF8BC34A), // Light Green
+        t,
+      )!;
+    } else if (intensity < mediumThreshold) {
+      // Medium: Light Green to Yellow (0.33 to 0.67)
+      final t =
+          (intensity - lowThreshold) /
+          (mediumThreshold - lowThreshold); // Scale to 0.0-1.0
+      return Color.lerp(
+        const Color(0xFF8BC34A), // Light Green
+        const Color(0xFFFFEB3B), // Yellow
+        t,
+      )!;
+    } else {
+      // High: Yellow to Red (0.67 to 1.0)
+      final t =
+          (intensity - mediumThreshold) /
+          (1.0 - mediumThreshold); // Scale to 0.0-1.0
+      return Color.lerp(
+        const Color(0xFFFFEB3B), // Yellow
+        const Color(0xFFF44336), // Red
+        t,
+      )!;
+    }
+  }
+
+  /// Get intensity category label based on actual count
+  /// Uses fixed absolute thresholds
+  String _getIntensityLabelFromCount(int count) {
+    if (count <= 20) return 'Low';
+    if (count <= 50) return 'Medium';
+    return 'High';
   }
 
   @override
@@ -527,16 +642,16 @@ class _DiseaseMapWidgetState extends State<DiseaseMapWidget>
                     Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        _buildLegendItem(Colors.green, 'Mild'),
+                        _buildLegendItem(const Color(0xFF4CAF50), 'Low'),
                         const SizedBox(width: 16),
-                        _buildLegendItem(Colors.orange, 'Moderate'),
+                        _buildLegendItem(const Color(0xFFFFEB3B), 'Medium'),
                         const SizedBox(width: 16),
-                        _buildLegendItem(Colors.red, 'Severe'),
+                        _buildLegendItem(const Color(0xFFF44336), 'High'),
                       ],
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      'Pin color = Severity (1-20: Mild, 21-50: Moderate, 51+: Severe)',
+                      'Thresholds: Low (1-20 cases) | Medium (21-50 cases) | High (51+ cases)',
                       style: TextStyle(color: Colors.grey[700], fontSize: 11),
                     ),
                   ],
@@ -636,6 +751,7 @@ class _DiseaseMapWidgetState extends State<DiseaseMapWidget>
                         userAgentPackageName: 'com.example.capstone',
                         tileProvider: CancellableNetworkTileProvider(),
                       ),
+                      CircleLayer(circles: _heatmapCircles),
                       MarkerLayer(markers: _markers),
                     ],
                   ),

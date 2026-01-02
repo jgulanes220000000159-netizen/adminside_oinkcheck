@@ -131,6 +131,46 @@ class ScanRequestsService {
             startInclusive = now.subtract(const Duration(days: 7));
             endExclusive = now;
             break;
+          case 'Last Month':
+            final prevMonth = now.month == 1 ? 12 : now.month - 1;
+            final prevYear = now.month == 1 ? now.year - 1 : now.year;
+            startInclusive = DateTime(prevYear, prevMonth, 1);
+            endExclusive = DateTime(now.year, now.month, 1);
+            break;
+          case 'All Time':
+            // For All Time, calculate from completed reports
+            final completedReports = scanRequests
+                .where((r) => (r['status'] ?? '').toString() == 'completed')
+                .toList();
+            if (completedReports.isNotEmpty) {
+              DateTime? earliestDate;
+              DateTime? latestDate;
+              for (final r in completedReports) {
+                final createdAtRaw = r['createdAt'];
+                DateTime? createdAt;
+                if (createdAtRaw is Timestamp) createdAt = createdAtRaw.toDate();
+                if (createdAtRaw is String) createdAt = DateTime.tryParse(createdAtRaw);
+                if (createdAt != null) {
+                  if (earliestDate == null || createdAt.isBefore(earliestDate)) {
+                    earliestDate = createdAt;
+                  }
+                  if (latestDate == null || createdAt.isAfter(latestDate)) {
+                    latestDate = createdAt;
+                  }
+                }
+              }
+              if (earliestDate != null && latestDate != null) {
+                startInclusive = DateTime(earliestDate.year, earliestDate.month, earliestDate.day);
+                endExclusive = DateTime(latestDate.year, latestDate.month, latestDate.day).add(const Duration(days: 1));
+              } else {
+                startInclusive = now.subtract(const Duration(days: 30));
+                endExclusive = now;
+              }
+            } else {
+              startInclusive = now.subtract(const Duration(days: 30));
+              endExclusive = now;
+            }
+            break;
           case 'Last 30 Days':
             startInclusive = now.subtract(const Duration(days: 30));
             endExclusive = now;
@@ -148,8 +188,10 @@ class ScanRequestsService {
             endExclusive = now;
             break;
           default:
-            startInclusive = now.subtract(const Duration(days: 7));
-            endExclusive = now;
+            final prevMonth = now.month == 1 ? 12 : now.month - 1;
+            final prevYear = now.month == 1 ? now.year - 1 : now.year;
+            startInclusive = DateTime(prevYear, prevMonth, 1);
+            endExclusive = DateTime(now.year, now.month, 1);
         }
       }
 
@@ -303,6 +345,46 @@ class ScanRequestsService {
             startInclusive = now.subtract(const Duration(days: 7));
             endExclusive = now;
             break;
+          case 'Last Month':
+            final prevMonth = now.month == 1 ? 12 : now.month - 1;
+            final prevYear = now.month == 1 ? now.year - 1 : now.year;
+            startInclusive = DateTime(prevYear, prevMonth, 1);
+            endExclusive = DateTime(now.year, now.month, 1);
+            break;
+          case 'All Time':
+            // For All Time, calculate from completed reports
+            final completedReports = scanRequests
+                .where((r) => (r['status'] ?? '').toString() == 'completed')
+                .toList();
+            if (completedReports.isNotEmpty) {
+              DateTime? earliestDate;
+              DateTime? latestDate;
+              for (final r in completedReports) {
+                final createdAtRaw = r['createdAt'];
+                DateTime? createdAt;
+                if (createdAtRaw is Timestamp) createdAt = createdAtRaw.toDate();
+                if (createdAtRaw is String) createdAt = DateTime.tryParse(createdAtRaw);
+                if (createdAt != null) {
+                  if (earliestDate == null || createdAt.isBefore(earliestDate)) {
+                    earliestDate = createdAt;
+                  }
+                  if (latestDate == null || createdAt.isAfter(latestDate)) {
+                    latestDate = createdAt;
+                  }
+                }
+              }
+              if (earliestDate != null && latestDate != null) {
+                startInclusive = DateTime(earliestDate.year, earliestDate.month, earliestDate.day);
+                endExclusive = DateTime(latestDate.year, latestDate.month, latestDate.day).add(const Duration(days: 1));
+              } else {
+                startInclusive = now.subtract(const Duration(days: 30));
+                endExclusive = now;
+              }
+            } else {
+              startInclusive = now.subtract(const Duration(days: 30));
+              endExclusive = now;
+            }
+            break;
           case 'Last 30 Days':
             startInclusive = now.subtract(const Duration(days: 30));
             endExclusive = now;
@@ -320,8 +402,10 @@ class ScanRequestsService {
             endExclusive = now;
             break;
           default:
-            startInclusive = now.subtract(const Duration(days: 7));
-            endExclusive = now;
+            final prevMonth = now.month == 1 ? 12 : now.month - 1;
+            final prevYear = now.month == 1 ? now.year - 1 : now.year;
+            startInclusive = DateTime(prevYear, prevMonth, 1);
+            endExclusive = DateTime(now.year, now.month, 1);
         }
       }
 
@@ -449,12 +533,61 @@ class ScanRequestsService {
       }
     }
 
+    // Handle 'All Time' specially - find range from first to last completed report
+    if (timeRange == 'All Time') {
+      final completedReports = requests
+          .where((r) => (r['status'] ?? '').toString() == 'completed')
+          .toList();
+      if (completedReports.isNotEmpty) {
+        DateTime? earliestDate;
+        DateTime? latestDate;
+        for (final r in completedReports) {
+          final createdAtRaw = r['createdAt'];
+          DateTime? createdAt;
+          if (createdAtRaw is Timestamp) createdAt = createdAtRaw.toDate();
+          if (createdAtRaw is String) createdAt = DateTime.tryParse(createdAtRaw);
+          if (createdAt != null) {
+            if (earliestDate == null || createdAt.isBefore(earliestDate)) {
+              earliestDate = createdAt;
+            }
+            if (latestDate == null || createdAt.isAfter(latestDate)) {
+              latestDate = createdAt;
+            }
+          }
+        }
+        if (earliestDate != null && latestDate != null) {
+          final startInclusive = DateTime(earliestDate.year, earliestDate.month, earliestDate.day);
+          final endExclusive = DateTime(latestDate.year, latestDate.month, latestDate.day).add(const Duration(days: 1));
+          return requests.where((request) {
+            final createdAt = request['createdAt'];
+            if (createdAt == null) return false;
+            DateTime requestDate;
+            if (createdAt is Timestamp) {
+              requestDate = createdAt.toDate();
+            } else if (createdAt is String) {
+              requestDate = DateTime.tryParse(createdAt) ?? DateTime.now();
+            } else {
+              return false;
+            }
+            return !requestDate.isBefore(startInclusive) && requestDate.isBefore(endExclusive);
+          }).toList();
+        }
+      }
+      // If no completed reports, return all requests
+      return requests;
+    }
+
     switch (timeRange) {
       case '1 Day':
         startDate = now.subtract(const Duration(days: 1));
         break;
       case 'Last 7 Days':
         startDate = now.subtract(const Duration(days: 7));
+        break;
+      case 'Last Month':
+        final prevMonth = now.month == 1 ? 12 : now.month - 1;
+        final prevYear = now.month == 1 ? now.year - 1 : now.year;
+        startDate = DateTime(prevYear, prevMonth, 1);
         break;
       case 'Last 30 Days':
         startDate = now.subtract(const Duration(days: 30));
@@ -469,7 +602,9 @@ class ScanRequestsService {
         startDate = now.subtract(const Duration(days: 365));
         break;
       default:
-        startDate = now.subtract(const Duration(days: 7));
+        final prevMonth = now.month == 1 ? 12 : now.month - 1;
+        final prevYear = now.month == 1 ? now.year - 1 : now.year;
+        startDate = DateTime(prevYear, prevMonth, 1);
     }
 
     // debugPrint('=== TIME RANGE FILTERING DEBUG ===');
@@ -509,6 +644,7 @@ class ScanRequestsService {
           // Define the time range logic:
           // - "1 Day": Only today's scans (last 24 hours)
           // - "Last 7 Days": Scans from 7 days ago up to today (including today)
+          // - "Last Month": Scans from the previous month (e.g., January -> December)
           // - "Last 30 Days": Scans from 30 days ago up to today (including today)
           // - etc.
           bool isInRange;
@@ -517,6 +653,13 @@ class ScanRequestsService {
             isInRange = requestDate.isAfter(
               now.subtract(const Duration(days: 1)),
             );
+          } else if (timeRange == 'Last Month') {
+            // For Last Month: include scans from the previous month only
+            final prevMonth = now.month == 1 ? 12 : now.month - 1;
+            final prevYear = now.month == 1 ? now.year - 1 : now.year;
+            final monthStart = DateTime(prevYear, prevMonth, 1);
+            final monthEnd = DateTime(now.year, now.month, 1);
+            isInRange = !requestDate.isBefore(monthStart) && requestDate.isBefore(monthEnd);
           } else {
             // For other ranges: include scans from startDate up to today
             // This includes today's scans in longer time ranges
@@ -656,6 +799,46 @@ class ScanRequestsService {
             startInclusive = now.subtract(const Duration(days: 7));
             endExclusive = now;
             break;
+          case 'Last Month':
+            final prevMonth = now.month == 1 ? 12 : now.month - 1;
+            final prevYear = now.month == 1 ? now.year - 1 : now.year;
+            startInclusive = DateTime(prevYear, prevMonth, 1);
+            endExclusive = DateTime(now.year, now.month, 1);
+            break;
+          case 'All Time':
+            // For All Time, calculate from completed reports
+            final completedReports = scanRequests
+                .where((r) => (r['status'] ?? '').toString() == 'completed')
+                .toList();
+            if (completedReports.isNotEmpty) {
+              DateTime? earliestDate;
+              DateTime? latestDate;
+              for (final r in completedReports) {
+                final createdAtRaw = r['createdAt'];
+                DateTime? createdAt;
+                if (createdAtRaw is Timestamp) createdAt = createdAtRaw.toDate();
+                if (createdAtRaw is String) createdAt = DateTime.tryParse(createdAtRaw);
+                if (createdAt != null) {
+                  if (earliestDate == null || createdAt.isBefore(earliestDate)) {
+                    earliestDate = createdAt;
+                  }
+                  if (latestDate == null || createdAt.isAfter(latestDate)) {
+                    latestDate = createdAt;
+                  }
+                }
+              }
+              if (earliestDate != null && latestDate != null) {
+                startInclusive = DateTime(earliestDate.year, earliestDate.month, earliestDate.day);
+                endExclusive = DateTime(latestDate.year, latestDate.month, latestDate.day).add(const Duration(days: 1));
+              } else {
+                startInclusive = now.subtract(const Duration(days: 30));
+                endExclusive = now;
+              }
+            } else {
+              startInclusive = now.subtract(const Duration(days: 30));
+              endExclusive = now;
+            }
+            break;
           case 'Last 30 Days':
             startInclusive = now.subtract(const Duration(days: 30));
             endExclusive = now;
@@ -673,8 +856,10 @@ class ScanRequestsService {
             endExclusive = now;
             break;
           default:
-            startInclusive = now.subtract(const Duration(days: 7));
-            endExclusive = now;
+            final prevMonth = now.month == 1 ? 12 : now.month - 1;
+            final prevYear = now.month == 1 ? now.year - 1 : now.year;
+            startInclusive = DateTime(prevYear, prevMonth, 1);
+            endExclusive = DateTime(now.year, now.month, 1);
         }
       }
 
@@ -835,6 +1020,46 @@ class ScanRequestsService {
           periodStart = now.subtract(const Duration(days: 7));
           periodEnd = now;
           break;
+        case 'Last Month':
+          final prevMonth = now.month == 1 ? 12 : now.month - 1;
+          final prevYear = now.month == 1 ? now.year - 1 : now.year;
+          periodStart = DateTime(prevYear, prevMonth, 1);
+          periodEnd = DateTime(now.year, now.month, 1);
+          break;
+        case 'All Time':
+          // For All Time, calculate from completed reports in submittedInPeriod
+          final completedReports = submittedInPeriod
+              .where((r) => (r['status'] ?? '').toString() == 'completed')
+              .toList();
+          if (completedReports.isNotEmpty) {
+            DateTime? earliestDate;
+            DateTime? latestDate;
+            for (final r in completedReports) {
+              final createdAtRaw = r['createdAt'];
+              DateTime? createdAt;
+              if (createdAtRaw is Timestamp) createdAt = createdAtRaw.toDate();
+              if (createdAtRaw is String) createdAt = DateTime.tryParse(createdAtRaw);
+              if (createdAt != null) {
+                if (earliestDate == null || createdAt.isBefore(earliestDate)) {
+                  earliestDate = createdAt;
+                }
+                if (latestDate == null || createdAt.isAfter(latestDate)) {
+                  latestDate = createdAt;
+                }
+              }
+            }
+            if (earliestDate != null && latestDate != null) {
+              periodStart = DateTime(earliestDate.year, earliestDate.month, earliestDate.day);
+              periodEnd = DateTime(latestDate.year, latestDate.month, latestDate.day).add(const Duration(days: 1));
+            } else {
+              periodStart = now.subtract(const Duration(days: 30));
+              periodEnd = now;
+            }
+          } else {
+            periodStart = now.subtract(const Duration(days: 30));
+            periodEnd = now;
+          }
+          break;
         case 'Last 30 Days':
           periodStart = now.subtract(const Duration(days: 30));
           periodEnd = now;
@@ -852,8 +1077,10 @@ class ScanRequestsService {
           periodEnd = now;
           break;
         default:
-          periodStart = now.subtract(const Duration(days: 7));
-          periodEnd = now;
+          final prevMonth = now.month == 1 ? 12 : now.month - 1;
+          final prevYear = now.month == 1 ? now.year - 1 : now.year;
+          periodStart = DateTime(prevYear, prevMonth, 1);
+          periodEnd = DateTime(now.year, now.month, 1);
       }
     }
 
