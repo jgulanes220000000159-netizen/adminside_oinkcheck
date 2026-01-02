@@ -57,9 +57,11 @@ class _CityAgg {
   final String diseaseKey;
   final String province;
   final String city;
-  int count = 0;
+  int count = 0; // Total case count (for heatmap intensity)
   double? lat;
   double? lng;
+  // Track disease breakdown when showing "All" diseases (for info display)
+  final Map<String, int> diseaseBreakdown = {}; // diseaseKey -> count
 }
 
 // Disease Map Widget
@@ -323,25 +325,31 @@ class _DiseaseMapWidgetState extends State<DiseaseMapWidget>
             cityAgg.count++;
           }
         } else {
-          // If no disease filter, skip reports with no diseases
+          // If no disease filter, aggregate by city for traditional heatmap
+          // Total intensity = sum of all reports (each report = 1 case)
           if (diseaseKeysInReport.isEmpty) {
             continue;
           }
-          // Group by city only when showing all diseases
+          // Group by city only when showing all diseases (traditional heatmap)
           final aggKey = '${city.toLowerCase()}|${province.toLowerCase()}';
 
-          agg.putIfAbsent(
+          final cityAgg = agg.putIfAbsent(
             aggKey,
             () => _CityAgg(
-              diseaseKey:
-                  diseaseKeysInReport.isNotEmpty
-                      ? diseaseKeysInReport.first
-                      : 'swine_pox',
+              diseaseKey: 'all_diseases', // Special key for "All" mode
               province: province,
               city: city,
             ),
           );
-          agg[aggKey]!.count++;
+
+          // Increment total count (each report = 1 case for heatmap intensity)
+          cityAgg.count++;
+
+          // Track disease breakdown for info display
+          for (final diseaseKey in diseaseKeysInReport) {
+            cityAgg.diseaseBreakdown[diseaseKey] =
+                (cityAgg.diseaseBreakdown[diseaseKey] ?? 0) + 1;
+          }
         }
       }
 
@@ -396,10 +404,10 @@ class _DiseaseMapWidgetState extends State<DiseaseMapWidget>
       final heatmapCircles = <CircleMarker>[];
       final markers = <Marker>[]; // Keep markers for click interaction
 
-      // Fixed absolute thresholds
-      const int lowThreshold = 20; // Low: 1-20 cases
-      const int mediumThreshold = 50; // Medium: 21-50 cases
-      // High: 51+ cases
+      // Fixed absolute thresholds (adjusted for testing with minimal data)
+      const int lowThreshold = 2; // Low: 1-2 cases
+      const int mediumThreshold = 4; // Medium: 3-4 cases
+      // High: 5+ cases
 
       for (final a in agg.values) {
         // Must have coordinates
@@ -430,51 +438,88 @@ class _DiseaseMapWidgetState extends State<DiseaseMapWidget>
         double intensity; // 0.0 to 1.0 for color gradient
 
         if (count <= lowThreshold) {
-          // Low: 1-20 cases
-          // Normalize within low range: 1 case = 0.0, 20 cases = 0.33
+          // Low: 1-2 cases
+          // Normalize within low range: 1 case = 0.0, 2 cases = 0.33
           intensity = (count / lowThreshold) * 0.33;
         } else if (count <= mediumThreshold) {
-          // Medium: 21-50 cases
-          // Normalize within medium range: 21 cases = 0.33, 50 cases = 0.67
+          // Medium: 3-4 cases
+          // Normalize within medium range: 3 cases = 0.33, 4 cases = 0.67
           intensity =
               0.33 +
               ((count - lowThreshold) / (mediumThreshold - lowThreshold)) *
                   0.34;
         } else {
-          // High: 51+ cases
-          // Normalize within high range: 51 cases = 0.67, cap at 1.0 for very high counts
+          // High: 5+ cases
+          // Normalize within high range: 5 cases = 0.67, scale up quickly for higher counts
           final excess = count - mediumThreshold;
-          intensity = 0.67 + (math.min(excess / 100.0, 1.0) * 0.33);
+          // For testing thresholds (5+), scale more aggressively: 5 cases = 0.67, 10+ cases = 1.0
+          intensity = 0.67 + (math.min(excess / 5.0, 1.0) * 0.33);
         }
 
-        // Calculate circle size based on count category
+        // Calculate circle size based on count category (reduced for more compact display)
         double radius;
         if (count <= lowThreshold) {
-          // Low: 1km to 3km
-          radius = 1000.0 + ((count / lowThreshold) * 2000.0);
+          // Low: 500m to 1.5km
+          radius = 500.0 + ((count / lowThreshold) * 1000.0);
         } else if (count <= mediumThreshold) {
-          // Medium: 3km to 6km
+          // Medium: 1.5km to 3km
           radius =
-              3000.0 +
+              1500.0 +
               (((count - lowThreshold) / (mediumThreshold - lowThreshold)) *
-                  3000.0);
+                  1500.0);
         } else {
-          // High: 6km to 10km (capped)
+          // High: 3km to 5km (capped)
           final excess = count - mediumThreshold;
-          radius = 6000.0 + (math.min(excess / 50.0, 1.0) * 4000.0);
+          radius = 3000.0 + (math.min(excess / 50.0, 1.0) * 2000.0);
         }
 
         // Get heatmap color based on intensity
         final heatmapColor = _getHeatmapColor(intensity);
 
-        // Create heatmap circle (solid color, no opacity)
+        // Create smooth gradient heatmap effect using multiple overlapping circles
+        // This simulates Kernel Density Estimation (KDE) for a smooth gradient
+        // More layers = smoother gradient (like the reference image)
+        final int numLayers = 5; // Increased layers for smoother gradient
+        for (int i = 0; i < numLayers; i++) {
+          // Each layer extends further with decreasing opacity
+          final layerRadius =
+              radius *
+              (1.0 +
+                  (i *
+                      0.2)); // Layers extend outward (reduced from 0.25 to 0.2)
+          // Opacity decreases exponentially for smooth falloff
+          final layerOpacity =
+              0.6 *
+              math.exp(
+                -i * 0.4,
+              ); // Exponential decay: 0.6, 0.4, 0.27, 0.18, 0.12
+
+          if (layerRadius > 50 && layerOpacity > 0.05) {
+            // Add gradient layers (semi-transparent for blending)
+            heatmapCircles.add(
+              CircleMarker(
+                point: LatLng(a.lat!, a.lng!),
+                radius: layerRadius,
+                color: heatmapColor.withOpacity(layerOpacity),
+                borderColor: Colors.transparent,
+                borderStrokeWidth: 0,
+                useRadiusInMeter: true,
+              ),
+            );
+          }
+        }
+
+        // Add a solid center circle for the core intensity point (like reference image)
+        // This creates the "hotspot" effect with white outline
         heatmapCircles.add(
           CircleMarker(
             point: LatLng(a.lat!, a.lng!),
-            radius: radius,
-            color: heatmapColor, // Solid color, no opacity
-            borderColor: heatmapColor,
-            borderStrokeWidth: 2.0,
+            radius: radius * 0.15, // Smaller solid center
+            color: heatmapColor, // Solid color (no opacity)
+            borderColor: Colors.white.withOpacity(
+              0.9,
+            ), // White outline like reference
+            borderStrokeWidth: 2.0, // Visible outline
             useRadiusInMeter: true,
           ),
         );
@@ -487,12 +532,29 @@ class _DiseaseMapWidgetState extends State<DiseaseMapWidget>
             height: 40,
             child: GestureDetector(
               onTap: () {
-                _showMarkerInfo(
-                  a.diseaseKey,
-                  count,
-                  city: a.city,
-                  province: a.province,
-                );
+                // Show disease breakdown if "All" is selected, otherwise show single disease
+                if (a.diseaseKey == 'all_diseases' &&
+                    a.diseaseBreakdown.isNotEmpty) {
+                  final diseaseList = a.diseaseBreakdown.entries
+                      .map(
+                        (e) => '${_getDiseaseDisplayName(e.key)}: ${e.value}',
+                      )
+                      .join('\n');
+                  _showMarkerInfo(
+                    'All Diseases',
+                    count,
+                    city: a.city,
+                    province: a.province,
+                    diseaseBreakdown: diseaseList,
+                  );
+                } else {
+                  _showMarkerInfo(
+                    a.diseaseKey,
+                    count,
+                    city: a.city,
+                    province: a.province,
+                  );
+                }
               },
               child: Container(
                 color: Colors.transparent,
@@ -531,15 +593,24 @@ class _DiseaseMapWidgetState extends State<DiseaseMapWidget>
     int count, {
     required String city,
     required String province,
+    String? diseaseBreakdown,
   }) {
     showDialog(
       context: context,
       builder:
           (context) => AlertDialog(
-            title: Text(_getDiseaseDisplayName(diseaseKey)),
-            content: Text(
-              'Location: $city, $province\nCases: $count\nIntensity: ${_getIntensityLabelFromCount(count)}',
-              style: const TextStyle(fontSize: 16),
+            title: Text(
+              diseaseKey == 'all_diseases' || diseaseKey == 'All Diseases'
+                  ? 'All Diseases'
+                  : _getDiseaseDisplayName(diseaseKey),
+            ),
+            content: SingleChildScrollView(
+              child: Text(
+                diseaseBreakdown != null
+                    ? 'Location: $city, $province\nTotal Cases: $count\nIntensity: ${_getIntensityLabelFromCount(count)}\n\nDisease Breakdown:\n$diseaseBreakdown'
+                    : 'Location: $city, $province\nCases: $count\nIntensity: ${_getIntensityLabelFromCount(count)}',
+                style: const TextStyle(fontSize: 16),
+              ),
             ),
             actions: [
               TextButton(
@@ -566,10 +637,10 @@ class _DiseaseMapWidgetState extends State<DiseaseMapWidget>
   /// Get heatmap color based on intensity (0.0 to 1.0)
   /// Returns gradient from green (low) -> yellow (medium) -> red (high)
   ///
-  /// Fixed Absolute Thresholds:
-  /// - Low (Green): 1-20 cases
-  /// - Medium (Yellow): 21-50 cases
-  /// - High (Red): 51+ cases
+  /// Fixed Absolute Thresholds (for testing):
+  /// - Low (Green): 1-2 cases
+  /// - Medium (Yellow): 3-4 cases
+  /// - High (Red): 5+ cases
   Color _getHeatmapColor(double intensity) {
     if (intensity <= 0.0) return const Color(0xFF4CAF50); // Green
     if (intensity >= 1.0) return const Color(0xFFF44336); // Red
@@ -611,10 +682,10 @@ class _DiseaseMapWidgetState extends State<DiseaseMapWidget>
   }
 
   /// Get intensity category label based on actual count
-  /// Uses fixed absolute thresholds
+  /// Uses fixed absolute thresholds (adjusted for testing)
   String _getIntensityLabelFromCount(int count) {
-    if (count <= 20) return 'Low';
-    if (count <= 50) return 'Medium';
+    if (count <= 2) return 'Low';
+    if (count <= 4) return 'Medium';
     return 'High';
   }
 
@@ -651,7 +722,7 @@ class _DiseaseMapWidgetState extends State<DiseaseMapWidget>
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      'Thresholds: Low (1-20 cases) | Medium (21-50 cases) | High (51+ cases)',
+                      'Thresholds: Low (1-2 cases) | Medium (3-4 cases) | High (5+ cases)',
                       style: TextStyle(color: Colors.grey[700], fontSize: 11),
                     ),
                   ],
