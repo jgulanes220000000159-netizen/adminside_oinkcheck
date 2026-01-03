@@ -535,25 +535,6 @@ class _AdminLoginState extends State<AdminLogin> {
                                       ),
                             ),
                           ),
-                          SizedBox(
-                            height: is1366x768 ? padding * 0.2 : padding * 0.5,
-                          ),
-                          // Link to setup screen
-                          TextButton(
-                            onPressed:
-                                _isLoading
-                                    ? null
-                                    : () {
-                                      Navigator.pushNamed(context, '/setup');
-                                    },
-                            child: Text(
-                              'Create First Admin Account',
-                              style: TextStyle(
-                                color: const Color.fromARGB(255, 42, 157, 50),
-                                fontSize: subtitleFontSize * 0.9,
-                              ),
-                            ),
-                          ),
                         ],
                       ),
                     ),

@@ -11,73 +11,9 @@ class Settings extends StatefulWidget {
 }
 
 class _SettingsState extends State<Settings> {
-  bool _emailNotifications = true;
   String? _adminName;
   String? _email; // Initialize as null, load from Firestore
   bool _isLoadingData = true; // Track loading state
-
-  Future<void> _updateEmailNotificationPref(bool enabled) async {
-    try {
-      final user = FirebaseAuth.instance.currentUser;
-      if (user == null) return;
-      await FirebaseFirestore.instance.collection('admins').doc(user.uid).set({
-        'notificationPrefs': {'email': enabled},
-      }, SetOptions(merge: true));
-
-      // Log notification settings change (with error handling)
-      try {
-        // Get current admin name if not loaded yet
-        String adminName = _adminName ?? 'Admin';
-        if (_adminName == null) {
-          final adminDoc =
-              await FirebaseFirestore.instance
-                  .collection('admins')
-                  .doc(user.uid)
-                  .get();
-          if (adminDoc.exists) {
-            adminName = adminDoc.data()?['adminName'] ?? 'Admin';
-          }
-        }
-
-        await FirebaseFirestore.instance.collection('activities').add({
-          'action':
-              enabled
-                  ? 'Email notifications enabled'
-                  : 'Email notifications disabled',
-          'user': adminName,
-          'type': 'settings_change',
-          'color': Colors.blue.value,
-          'icon':
-              enabled
-                  ? Icons.notifications_active.codePoint
-                  : Icons.notifications_off.codePoint,
-          'timestamp': FieldValue.serverTimestamp(),
-        });
-      } catch (e) {
-        // Don't fail the notification update if activity logging fails
-        print('Failed to log notification activity: $e');
-      }
-
-      setState(() => _emailNotifications = enabled);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            enabled
-                ? 'Email notifications enabled'
-                : 'Email notifications disabled',
-          ),
-          backgroundColor: Colors.green,
-        ),
-      );
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Failed to update notifications: $e'),
-          backgroundColor: Colors.red,
-        ),
-      );
-    }
-  }
 
   Future<void> _editAdminName() async {
     final controller = TextEditingController(text: _adminName ?? 'Admin');
@@ -300,7 +236,6 @@ class _SettingsState extends State<Settings> {
             _adminName = data['adminName'] ?? 'Admin';
             // Prioritize Firebase Auth email, fallback to Firestore only if auth email is null
             _email = updatedUser?.email ?? data['email'];
-            _emailNotifications = data['notificationPrefs']?['email'] ?? true;
             _isLoadingData = false; // Data loaded successfully
           });
         } else if (mounted) {
@@ -799,9 +734,15 @@ class _SettingsState extends State<Settings> {
                                   default:
                                     // Check if the error message contains password-related keywords
                                     final message = e.message ?? '';
-                                    if (message.toLowerCase().contains('password') ||
-                                        message.toLowerCase().contains('credential') ||
-                                        message.toLowerCase().contains('incorrect')) {
+                                    if (message.toLowerCase().contains(
+                                          'password',
+                                        ) ||
+                                        message.toLowerCase().contains(
+                                          'credential',
+                                        ) ||
+                                        message.toLowerCase().contains(
+                                          'incorrect',
+                                        )) {
                                       errorMessage =
                                           'The password you entered is incorrect. Please check your password and try again.';
                                     } else {
@@ -865,558 +806,478 @@ class _SettingsState extends State<Settings> {
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisAlignment: MainAxisAlignment.start,
           children: [
-          const Text(
-            'Settings',
-            style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
-          ),
-          const SizedBox(height: 24),
+            const Text(
+              'Settings',
+              style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 24),
 
-          // Profile Settings
-          Card(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Padding(
-                  padding: EdgeInsets.all(16),
-                  child: Text(
-                    'Profile Settings',
-                    style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.green,
+            // Profile Settings
+            Card(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Padding(
+                    padding: EdgeInsets.all(16),
+                    child: Text(
+                      'Profile Settings',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.green,
+                      ),
                     ),
                   ),
-                ),
-                StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
-                  stream: () {
-                    final user = FirebaseAuth.instance.currentUser;
-                    if (user == null) {
-                      return const Stream<
-                        DocumentSnapshot<Map<String, dynamic>>
-                      >.empty();
-                    }
-                    return FirebaseFirestore.instance
-                        .collection('admins')
-                        .doc(user.uid)
-                        .snapshots();
-                  }(),
-                  builder: (context, snapshot) {
-                    final data = snapshot.data?.data();
-                    _adminName = data?['adminName'] ?? _adminName ?? 'Admin';
-                    return ListTile(
-                      leading: const Icon(Icons.person),
-                      title: const Text('Edit Admin Name'),
-                      subtitle: Text(_adminName ?? 'Admin'),
-                      onTap: _editAdminName,
-                    );
-                  },
-                ),
-                ListTile(
-                  leading: const Icon(Icons.email),
-                  title: const Text('Edit Email'),
-                  subtitle:
-                      _isLoadingData
-                          ? const Text('Loading...')
-                          : Text(_email ?? 'No email found'),
-                  trailing: IconButton(
-                    icon: const Icon(Icons.refresh),
-                    tooltip: 'Refresh email status',
-                    onPressed: () async {
-                      await _refreshAdminData();
-                      if (mounted) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text('Email status refreshed'),
-                            backgroundColor: Colors.green,
-                            duration: Duration(seconds: 2),
-                          ),
-                        );
+                  StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+                    stream: () {
+                      final user = FirebaseAuth.instance.currentUser;
+                      if (user == null) {
+                        return const Stream<
+                          DocumentSnapshot<Map<String, dynamic>>
+                        >.empty();
                       }
+                      return FirebaseFirestore.instance
+                          .collection('admins')
+                          .doc(user.uid)
+                          .snapshots();
+                    }(),
+                    builder: (context, snapshot) {
+                      final data = snapshot.data?.data();
+                      _adminName = data?['adminName'] ?? _adminName ?? 'Admin';
+                      return ListTile(
+                        leading: const Icon(Icons.person),
+                        title: const Text('Edit Admin Name'),
+                        subtitle: Text(_adminName ?? 'Admin'),
+                        onTap: _editAdminName,
+                      );
                     },
                   ),
-                  onTap:
-                      _isLoadingData || _email == null
-                          ? null // Disable if data is still loading or email is null
-                          : () => _showChangeEmailDialog(),
-                ),
-                StatefulBuilder(
-                  builder: (context, setState) {
-                    bool isHovered = false;
-                    return MouseRegion(
-                      onEnter: (_) => setState(() => isHovered = true),
-                      onExit: (_) => setState(() => isHovered = false),
-                      child: AnimatedContainer(
-                        duration: const Duration(milliseconds: 200),
-                        decoration: BoxDecoration(
-                          color:
-                              isHovered ? Colors.green.withOpacity(0.1) : null,
-                        ),
-                        child: ListTile(
-                          leading: const Icon(Icons.lock),
-                          title: const Text('Change Password'),
-                          subtitle: const Text(
-                            'Update your admin account password',
-                          ),
-                          onTap: () async {
-                            final currentPasswordController =
-                                TextEditingController();
-                            final newPasswordController =
-                                TextEditingController();
-                            final confirmPasswordController =
-                                TextEditingController();
-                            String? errorMessage;
-                            bool isLoading = false;
-                            bool showCurrentPassword = false;
-                            bool showNewPassword = false;
-                            bool showConfirmPassword = false;
-                            await showDialog<bool>(
-                              context: context,
-                              barrierDismissible: false,
-                              builder: (context) {
-                                return StatefulBuilder(
-                                  builder: (context, setState) {
-                                    return AlertDialog(
-                                      title: const Text('Change Password'),
-                                      contentPadding: const EdgeInsets.fromLTRB(
-                                          24.0, 20.0, 24.0, 24.0),
-                                      content: SizedBox(
-                                        width: 500,
-                                        child: Column(
-                                          mainAxisSize: MainAxisSize.min,
-                                          children: [
-                                          TextField(
-                                            controller:
-                                                currentPasswordController,
-                                            obscureText: !showCurrentPassword,
-                                            decoration: InputDecoration(
-                                              labelText: 'Current Password',
-                                              suffixIcon: IconButton(
-                                                icon: Icon(
-                                                  showCurrentPassword
-                                                      ? Icons.visibility_off
-                                                      : Icons.visibility,
-                                                ),
-                                                onPressed: () {
-                                                  setState(() {
-                                                    showCurrentPassword =
-                                                        !showCurrentPassword;
-                                                  });
-                                                },
-                                              ),
+                  ListTile(
+                    leading: const Icon(Icons.email),
+                    title: const Text('Edit Email'),
+                    subtitle:
+                        _isLoadingData
+                            ? const Text('Loading...')
+                            : Text(_email ?? 'No email found'),
+                    trailing: IconButton(
+                      icon: const Icon(Icons.refresh),
+                      tooltip: 'Refresh email status',
+                      onPressed: () async {
+                        await _refreshAdminData();
+                        if (mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Email status refreshed'),
+                              backgroundColor: Colors.green,
+                              duration: Duration(seconds: 2),
+                            ),
+                          );
+                        }
+                      },
+                    ),
+                    onTap:
+                        _isLoadingData || _email == null
+                            ? null // Disable if data is still loading or email is null
+                            : () => _showChangeEmailDialog(),
+                  ),
+                  ListTile(
+                    leading: const Icon(Icons.lock),
+                    title: const Text('Change Password'),
+                    subtitle: const Text('Update your admin account password'),
+                    onTap: () async {
+                      final currentPasswordController = TextEditingController();
+                      final newPasswordController = TextEditingController();
+                      final confirmPasswordController = TextEditingController();
+                      String? errorMessage;
+                      bool isLoading = false;
+                      bool showCurrentPassword = false;
+                      bool showNewPassword = false;
+                      bool showConfirmPassword = false;
+                      await showDialog<bool>(
+                        context: context,
+                        barrierDismissible: false,
+                        builder: (context) {
+                          return StatefulBuilder(
+                            builder: (context, setState) {
+                              return AlertDialog(
+                                title: const Text('Change Password'),
+                                contentPadding: const EdgeInsets.fromLTRB(
+                                  24.0,
+                                  20.0,
+                                  24.0,
+                                  24.0,
+                                ),
+                                content: SizedBox(
+                                  width: 500,
+                                  child: Column(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      TextField(
+                                        controller: currentPasswordController,
+                                        obscureText: !showCurrentPassword,
+                                        decoration: InputDecoration(
+                                          labelText: 'Current Password',
+                                          suffixIcon: IconButton(
+                                            icon: Icon(
+                                              showCurrentPassword
+                                                  ? Icons.visibility_off
+                                                  : Icons.visibility,
                                             ),
+                                            onPressed: () {
+                                              setState(() {
+                                                showCurrentPassword =
+                                                    !showCurrentPassword;
+                                              });
+                                            },
                                           ),
-                                          const SizedBox(height: 12),
-                                          TextField(
-                                            controller: newPasswordController,
-                                            obscureText: !showNewPassword,
-                                            decoration: InputDecoration(
-                                              labelText: 'New Password',
-                                              helperText:
-                                                  'Must be 8+ characters with uppercase, lowercase, number, and special character',
-                                              helperMaxLines: 2,
-                                              suffixIcon: IconButton(
-                                                icon: Icon(
-                                                  showNewPassword
-                                                      ? Icons.visibility_off
-                                                      : Icons.visibility,
-                                                ),
-                                                onPressed: () {
-                                                  setState(() {
-                                                    showNewPassword =
-                                                        !showNewPassword;
-                                                  });
-                                                },
-                                              ),
-                                            ),
-                                          ),
-                                          const SizedBox(height: 12),
-                                          TextField(
-                                            controller:
-                                                confirmPasswordController,
-                                            obscureText: !showConfirmPassword,
-                                            decoration: InputDecoration(
-                                              labelText: 'Confirm New Password',
-                                              suffixIcon: IconButton(
-                                                icon: Icon(
-                                                  showConfirmPassword
-                                                      ? Icons.visibility_off
-                                                      : Icons.visibility,
-                                                ),
-                                                onPressed: () {
-                                                  setState(() {
-                                                    showConfirmPassword =
-                                                        !showConfirmPassword;
-                                                  });
-                                                },
-                                              ),
-                                            ),
-                                          ),
-                                          if (errorMessage != null) ...[
-                                            const SizedBox(height: 10),
-                                            Text(
-                                              errorMessage!,
-                                              style: const TextStyle(
-                                                color: Colors.red,
-                                                fontSize: 13,
-                                              ),
-                                            ),
-                                          ],
-                                          if (isLoading) ...[
-                                            const SizedBox(height: 16),
-                                            const Row(
-                                              mainAxisAlignment:
-                                                  MainAxisAlignment.center,
-                                              children: [
-                                                SizedBox(
-                                                  width: 20,
-                                                  height: 20,
-                                                  child:
-                                                      CircularProgressIndicator(
-                                                        strokeWidth: 2,
-                                                      ),
-                                                ),
-                                                SizedBox(width: 12),
-                                                Text('Changing password...'),
-                                              ],
-                                            ),
-                                          ],
-                                        ],
-                                      ),
-                                      ),
-                                      actions: [
-                                        TextButton(
-                                          onPressed:
-                                              isLoading
-                                                  ? null
-                                                  : () => Navigator.pop(
-                                                    context,
-                                                    false,
-                                                  ),
-                                          child: const Text('Cancel'),
                                         ),
-                                        ElevatedButton(
-                                          onPressed:
-                                              isLoading
-                                                  ? null
-                                                  : () async {
-                                                    final current =
-                                                        currentPasswordController
-                                                            .text
-                                                            .trim();
-                                                    final newPass =
-                                                        newPasswordController
-                                                            .text
-                                                            .trim();
-                                                    final confirm =
-                                                        confirmPasswordController
-                                                            .text
-                                                            .trim();
-                                                    // Validation
-                                                    if (current.isEmpty ||
-                                                        newPass.isEmpty ||
-                                                        confirm.isEmpty) {
-                                                      setState(
-                                                        () =>
-                                                            errorMessage =
-                                                                'All fields are required.',
-                                                      );
-                                                      return;
-                                                    }
-
-                                                    // Check if new password is same as current
-                                                    if (newPass == current) {
-                                                      setState(
-                                                        () =>
-                                                            errorMessage =
-                                                                'New password must be different from your current password.',
-                                                      );
-                                                      return;
-                                                    }
-
-                                                    // Check if passwords match
-                                                    if (newPass != confirm) {
-                                                      setState(
-                                                        () =>
-                                                            errorMessage =
-                                                                'New passwords do not match. Please try again.',
-                                                      );
-                                                      return;
-                                                    }
-
-                                                    // Password strength validation
-                                                    if (newPass.length < 8) {
-                                                      setState(
-                                                        () =>
-                                                            errorMessage =
-                                                                'Password must be at least 8 characters long.',
-                                                      );
-                                                      return;
-                                                    }
-
-                                                    // Check for uppercase letter
-                                                    if (!newPass.contains(
-                                                        RegExp(r'[A-Z]'))) {
-                                                      setState(
-                                                        () =>
-                                                            errorMessage =
-                                                                'Password must contain at least one uppercase letter (A-Z).',
-                                                      );
-                                                      return;
-                                                    }
-
-                                                    // Check for lowercase letter
-                                                    if (!newPass.contains(
-                                                        RegExp(r'[a-z]'))) {
-                                                      setState(
-                                                        () =>
-                                                            errorMessage =
-                                                                'Password must contain at least one lowercase letter (a-z).',
-                                                      );
-                                                      return;
-                                                    }
-
-                                                    // Check for number
-                                                    if (!newPass.contains(
-                                                        RegExp(r'[0-9]'))) {
-                                                      setState(
-                                                        () =>
-                                                            errorMessage =
-                                                                'Password must contain at least one number (0-9).',
-                                                      );
-                                                      return;
-                                                    }
-
-                                                    // Check for special character
-                                                    if (!newPass.contains(
-                                                        RegExp(
-                                                            r'[!@#$%^&*(),.?":{}|<>]'))) {
-                                                      setState(
-                                                        () =>
-                                                            errorMessage =
-                                                                'Password must contain at least one special character (!@#\$%^&* etc.).',
-                                                      );
-                                                      return;
-                                                    }
-
-                                                    // Start loading
-                                                    setState(() {
-                                                      isLoading = true;
-                                                      errorMessage = null;
-                                                    });
-
-                                                    try {
-                                                      final user =
-                                                          FirebaseAuth
-                                                              .instance
-                                                              .currentUser;
-                                                      if (user != null &&
-                                                          user.email != null) {
-                                                        final cred =
-                                                            EmailAuthProvider.credential(
-                                                              email:
-                                                                  user.email!,
-                                                              password: current,
-                                                            );
-                                                        await user
-                                                            .reauthenticateWithCredential(
-                                                              cred,
-                                                            );
-                                                        await user
-                                                            .updatePassword(
-                                                              newPass,
-                                                            );
-
-                                                        // Log password change (with error handling)
-                                                        try {
-                                                          await FirebaseFirestore
-                                                              .instance
-                                                              .collection(
-                                                                'activities',
-                                                              )
-                                                              .add({
-                                                                'action':
-                                                                    'Admin password changed',
-                                                                'user':
-                                                                    _adminName ??
-                                                                    'Admin',
-                                                                'type':
-                                                                    'password_change',
-                                                                'color':
-                                                                    Colors
-                                                                        .amber
-                                                                        .value,
-                                                                'icon':
-                                                                    Icons
-                                                                        .security
-                                                                        .codePoint,
-                                                                'timestamp':
-                                                                    FieldValue.serverTimestamp(),
-                                                              });
-                                                        } catch (e) {
-                                                          print(
-                                                            'Failed to log password change activity: $e',
-                                                          );
-                                                        }
-
-                                                        Navigator.pop(
-                                                          context,
-                                                          true,
-                                                        );
-                                                        ScaffoldMessenger.of(
-                                                          context,
-                                                        ).showSnackBar(
-                                                          const SnackBar(
-                                                            content: Text(
-                                                              'Password changed successfully!',
-                                                            ),
-                                                            backgroundColor:
-                                                                Colors.green,
-                                                          ),
-                                                        );
-                                                      }
-                                                    } on FirebaseAuthException catch (
-                                                      e
-                                                    ) {
-                                                      setState(() {
-                                                        isLoading = false;
-                                                        switch (e.code) {
-                                                          case 'wrong-password':
-                                                            errorMessage =
-                                                                'The current password you entered is incorrect. Please try again.';
-                                                            break;
-                                                          case 'invalid-credential':
-                                                            errorMessage =
-                                                                'The current password you entered is incorrect. Please check and try again.';
-                                                            break;
-                                                          case 'weak-password':
-                                                            errorMessage =
-                                                                'The password is too weak. Please use a stronger password.';
-                                                            break;
-                                                          case 'requires-recent-login':
-                                                            errorMessage =
-                                                                'Session expired. Please log out and log back in to change your password.';
-                                                            break;
-                                                          default:
-                                                            // Check if the error message contains password-related keywords
-                                                            final message =
-                                                                e.message ?? '';
-                                                            if (message
-                                                                    .toLowerCase()
-                                                                    .contains(
-                                                                        'password') ||
-                                                                message
-                                                                    .toLowerCase()
-                                                                    .contains(
-                                                                        'credential') ||
-                                                                message
-                                                                    .toLowerCase()
-                                                                    .contains(
-                                                                        'incorrect')) {
-                                                              errorMessage =
-                                                                  'The current password you entered is incorrect. Please check and try again.';
-                                                            } else {
-                                                              errorMessage =
-                                                                  'Failed to change password. ${message.isNotEmpty ? message : "Please try again."}';
-                                                            }
-                                                        }
-                                                      });
-                                                    } catch (e) {
-                                                      setState(() {
-                                                        isLoading = false;
-                                                        errorMessage =
-                                                            'An unexpected error occurred. Please try again.';
-                                                      });
-                                                    }
-                                                  },
-                                          child:
-                                              isLoading
-                                                  ? const SizedBox(
-                                                    width: 16,
-                                                    height: 16,
-                                                    child: CircularProgressIndicator(
-                                                      strokeWidth: 2,
-                                                      valueColor:
-                                                          AlwaysStoppedAnimation<
-                                                            Color
-                                                          >(Colors.white),
-                                                    ),
-                                                  )
-                                                  : const Text('Save'),
+                                      ),
+                                      const SizedBox(height: 12),
+                                      TextField(
+                                        controller: newPasswordController,
+                                        obscureText: !showNewPassword,
+                                        decoration: InputDecoration(
+                                          labelText: 'New Password',
+                                          helperText:
+                                              'Must be 8+ characters with uppercase, lowercase, number, and special character',
+                                          helperMaxLines: 2,
+                                          suffixIcon: IconButton(
+                                            icon: Icon(
+                                              showNewPassword
+                                                  ? Icons.visibility_off
+                                                  : Icons.visibility,
+                                            ),
+                                            onPressed: () {
+                                              setState(() {
+                                                showNewPassword =
+                                                    !showNewPassword;
+                                              });
+                                            },
+                                          ),
+                                        ),
+                                      ),
+                                      const SizedBox(height: 12),
+                                      TextField(
+                                        controller: confirmPasswordController,
+                                        obscureText: !showConfirmPassword,
+                                        decoration: InputDecoration(
+                                          labelText: 'Confirm New Password',
+                                          suffixIcon: IconButton(
+                                            icon: Icon(
+                                              showConfirmPassword
+                                                  ? Icons.visibility_off
+                                                  : Icons.visibility,
+                                            ),
+                                            onPressed: () {
+                                              setState(() {
+                                                showConfirmPassword =
+                                                    !showConfirmPassword;
+                                              });
+                                            },
+                                          ),
+                                        ),
+                                      ),
+                                      if (errorMessage != null) ...[
+                                        const SizedBox(height: 10),
+                                        Text(
+                                          errorMessage!,
+                                          style: const TextStyle(
+                                            color: Colors.red,
+                                            fontSize: 13,
+                                          ),
                                         ),
                                       ],
-                                    );
-                                  },
-                                );
-                              },
-                            );
-                          },
-                        ),
-                      ),
-                    );
-                  },
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 16),
+                                      if (isLoading) ...[
+                                        const SizedBox(height: 16),
+                                        const Row(
+                                          mainAxisAlignment:
+                                              MainAxisAlignment.center,
+                                          children: [
+                                            SizedBox(
+                                              width: 20,
+                                              height: 20,
+                                              child: CircularProgressIndicator(
+                                                strokeWidth: 2,
+                                              ),
+                                            ),
+                                            SizedBox(width: 12),
+                                            Text('Changing password...'),
+                                          ],
+                                        ),
+                                      ],
+                                    ],
+                                  ),
+                                ),
+                                actions: [
+                                  TextButton(
+                                    onPressed:
+                                        isLoading
+                                            ? null
+                                            : () =>
+                                                Navigator.pop(context, false),
+                                    child: const Text('Cancel'),
+                                  ),
+                                  ElevatedButton(
+                                    onPressed:
+                                        isLoading
+                                            ? null
+                                            : () async {
+                                              final current =
+                                                  currentPasswordController.text
+                                                      .trim();
+                                              final newPass =
+                                                  newPasswordController.text
+                                                      .trim();
+                                              final confirm =
+                                                  confirmPasswordController.text
+                                                      .trim();
+                                              // Validation
+                                              if (current.isEmpty ||
+                                                  newPass.isEmpty ||
+                                                  confirm.isEmpty) {
+                                                setState(
+                                                  () =>
+                                                      errorMessage =
+                                                          'All fields are required.',
+                                                );
+                                                return;
+                                              }
 
-          // Notification Settings
-          Card(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Padding(
-                  padding: EdgeInsets.all(16),
-                  child: Text(
-                    'Notification Settings',
-                    style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.green,
-                    ),
+                                              // Check if new password is same as current
+                                              if (newPass == current) {
+                                                setState(
+                                                  () =>
+                                                      errorMessage =
+                                                          'New password must be different from your current password.',
+                                                );
+                                                return;
+                                              }
+
+                                              // Check if passwords match
+                                              if (newPass != confirm) {
+                                                setState(
+                                                  () =>
+                                                      errorMessage =
+                                                          'New passwords do not match. Please try again.',
+                                                );
+                                                return;
+                                              }
+
+                                              // Password strength validation
+                                              if (newPass.length < 8) {
+                                                setState(
+                                                  () =>
+                                                      errorMessage =
+                                                          'Password must be at least 8 characters long.',
+                                                );
+                                                return;
+                                              }
+
+                                              // Check for uppercase letter
+                                              if (!newPass.contains(
+                                                RegExp(r'[A-Z]'),
+                                              )) {
+                                                setState(
+                                                  () =>
+                                                      errorMessage =
+                                                          'Password must contain at least one uppercase letter (A-Z).',
+                                                );
+                                                return;
+                                              }
+
+                                              // Check for lowercase letter
+                                              if (!newPass.contains(
+                                                RegExp(r'[a-z]'),
+                                              )) {
+                                                setState(
+                                                  () =>
+                                                      errorMessage =
+                                                          'Password must contain at least one lowercase letter (a-z).',
+                                                );
+                                                return;
+                                              }
+
+                                              // Check for number
+                                              if (!newPass.contains(
+                                                RegExp(r'[0-9]'),
+                                              )) {
+                                                setState(
+                                                  () =>
+                                                      errorMessage =
+                                                          'Password must contain at least one number (0-9).',
+                                                );
+                                                return;
+                                              }
+
+                                              // Check for special character
+                                              if (!newPass.contains(
+                                                RegExp(
+                                                  r'[!@#$%^&*(),.?":{}|<>]',
+                                                ),
+                                              )) {
+                                                setState(
+                                                  () =>
+                                                      errorMessage =
+                                                          'Password must contain at least one special character (!@#\$%^&* etc.).',
+                                                );
+                                                return;
+                                              }
+
+                                              // Start loading
+                                              setState(() {
+                                                isLoading = true;
+                                                errorMessage = null;
+                                              });
+
+                                              try {
+                                                final user =
+                                                    FirebaseAuth
+                                                        .instance
+                                                        .currentUser;
+                                                if (user != null &&
+                                                    user.email != null) {
+                                                  final cred =
+                                                      EmailAuthProvider.credential(
+                                                        email: user.email!,
+                                                        password: current,
+                                                      );
+                                                  await user
+                                                      .reauthenticateWithCredential(
+                                                        cred,
+                                                      );
+                                                  await user.updatePassword(
+                                                    newPass,
+                                                  );
+
+                                                  // Log password change (with error handling)
+                                                  try {
+                                                    await FirebaseFirestore
+                                                        .instance
+                                                        .collection(
+                                                          'activities',
+                                                        )
+                                                        .add({
+                                                          'action':
+                                                              'Admin password changed',
+                                                          'user':
+                                                              _adminName ??
+                                                              'Admin',
+                                                          'type':
+                                                              'password_change',
+                                                          'color':
+                                                              Colors
+                                                                  .amber
+                                                                  .value,
+                                                          'icon':
+                                                              Icons
+                                                                  .security
+                                                                  .codePoint,
+                                                          'timestamp':
+                                                              FieldValue.serverTimestamp(),
+                                                        });
+                                                  } catch (e) {
+                                                    print(
+                                                      'Failed to log password change activity: $e',
+                                                    );
+                                                  }
+
+                                                  Navigator.pop(context, true);
+                                                  ScaffoldMessenger.of(
+                                                    context,
+                                                  ).showSnackBar(
+                                                    const SnackBar(
+                                                      content: Text(
+                                                        'Password changed successfully!',
+                                                      ),
+                                                      backgroundColor:
+                                                          Colors.green,
+                                                    ),
+                                                  );
+                                                }
+                                              } on FirebaseAuthException catch (
+                                                e
+                                              ) {
+                                                setState(() {
+                                                  isLoading = false;
+                                                  switch (e.code) {
+                                                    case 'wrong-password':
+                                                      errorMessage =
+                                                          'The current password you entered is incorrect. Please try again.';
+                                                      break;
+                                                    case 'invalid-credential':
+                                                      errorMessage =
+                                                          'The current password you entered is incorrect. Please check and try again.';
+                                                      break;
+                                                    case 'weak-password':
+                                                      errorMessage =
+                                                          'The password is too weak. Please use a stronger password.';
+                                                      break;
+                                                    case 'requires-recent-login':
+                                                      errorMessage =
+                                                          'Session expired. Please log out and log back in to change your password.';
+                                                      break;
+                                                    default:
+                                                      // Check if the error message contains password-related keywords
+                                                      final message =
+                                                          e.message ?? '';
+                                                      if (message
+                                                              .toLowerCase()
+                                                              .contains(
+                                                                'password',
+                                                              ) ||
+                                                          message
+                                                              .toLowerCase()
+                                                              .contains(
+                                                                'credential',
+                                                              ) ||
+                                                          message
+                                                              .toLowerCase()
+                                                              .contains(
+                                                                'incorrect',
+                                                              )) {
+                                                        errorMessage =
+                                                            'The current password you entered is incorrect. Please check and try again.';
+                                                      } else {
+                                                        errorMessage =
+                                                            'Failed to change password. ${message.isNotEmpty ? message : "Please try again."}';
+                                                      }
+                                                  }
+                                                });
+                                              } catch (e) {
+                                                setState(() {
+                                                  isLoading = false;
+                                                  errorMessage =
+                                                      'An unexpected error occurred. Please try again.';
+                                                });
+                                              }
+                                            },
+                                    child:
+                                        isLoading
+                                            ? const SizedBox(
+                                              width: 16,
+                                              height: 16,
+                                              child: CircularProgressIndicator(
+                                                strokeWidth: 2,
+                                                valueColor:
+                                                    AlwaysStoppedAnimation<
+                                                      Color
+                                                    >(Colors.white),
+                                              ),
+                                            )
+                                            : const Text('Save'),
+                                  ),
+                                ],
+                              );
+                            },
+                          );
+                        },
+                      );
+                    },
                   ),
-                ),
-                StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
-                  stream: () {
-                    final user = FirebaseAuth.instance.currentUser;
-                    if (user == null) {
-                      return const Stream<
-                        DocumentSnapshot<Map<String, dynamic>>
-                      >.empty();
-                    }
-                    return FirebaseFirestore.instance
-                        .collection('admins')
-                        .doc(user.uid)
-                        .snapshots();
-                  }(),
-                  builder: (context, snapshot) {
-                    final dynamic raw = snapshot.data?.data();
-                    final Map<String, dynamic> data =
-                        raw is Map
-                            ? Map<String, dynamic>.from(raw)
-                            : <String, dynamic>{};
-                    final Map<String, dynamic> prefs =
-                        data['notificationPrefs'] is Map
-                            ? Map<String, dynamic>.from(
-                              data['notificationPrefs'] as Map,
-                            )
-                            : <String, dynamic>{};
-                    final bool currentPref =
-                        (prefs['email'] as bool?) ?? _emailNotifications;
-                    return SwitchListTile(
-                      secondary: const Icon(Icons.email),
-                      title: const Text('Email Notifications'),
-                      subtitle: const Text('Receive notifications via email'),
-                      value: currentPref,
-                      onChanged:
-                          (bool value) => _updateEmailNotificationPref(value),
-                    );
-                  },
-                ),
-              ],
+                ],
+              ),
             ),
-          ),
-        ],
+          ],
         ),
       ),
     );
