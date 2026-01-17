@@ -14,6 +14,98 @@ class _RatingsReviewsModalContentState extends State<RatingsReviewsModalContent>
   late TabController _tabController;
   int? _selectedRatingFilter; // null = All, 1-5 = specific rating
 
+  double _calcAverageFromDocs(List<QueryDocumentSnapshot> docs) {
+    double total = 0.0;
+    int count = 0;
+    for (final doc in docs) {
+      final data = doc.data() as Map<String, dynamic>;
+      final rating = (data['rating'] as num?)?.toDouble();
+      if (rating != null && rating > 0) {
+        total += rating;
+        count++;
+      }
+    }
+    return count > 0 ? total / count : 0.0;
+  }
+
+  Widget _buildAverageHeader({
+    required String title,
+    required double average,
+    required int totalCount,
+    String? breakdownText,
+    Color accent = const Color(0xFF2D7204),
+    IconData icon = Icons.star_rate_rounded,
+  }) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.grey[50],
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.grey[200]!),
+      ),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: accent.withOpacity(0.12),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Icon(icon, color: accent, size: 18),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                    color: Colors.black87,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                if (breakdownText != null && breakdownText.trim().isNotEmpty)
+                  Text(
+                    breakdownText,
+                    style: TextStyle(fontSize: 12, color: Colors.grey[700]),
+                  ),
+              ],
+            ),
+          ),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    average > 0 ? average.toStringAsFixed(1) : '0.0',
+                    style: const TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.black87,
+                    ),
+                  ),
+                  const SizedBox(width: 4),
+                  const Icon(Icons.star, color: Colors.amber, size: 16),
+                ],
+              ),
+              const SizedBox(height: 2),
+              Text(
+                '$totalCount total',
+                style: TextStyle(fontSize: 11, color: Colors.grey[600]),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   void initState() {
     super.initState();
@@ -281,50 +373,83 @@ class _RatingsReviewsModalContentState extends State<RatingsReviewsModalContent>
                 }).toList();
 
         if (filteredRatings.isEmpty) {
-          return Center(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(Icons.filter_alt_off, size: 64, color: Colors.grey[400]),
-                const SizedBox(height: 16),
-                Text(
-                  _selectedRatingFilter == null
-                      ? 'No farmer ratings yet'
-                      : 'No ${_selectedRatingFilter}-star farmer ratings',
-                  style: TextStyle(fontSize: 18, color: Colors.grey[600]),
+          final avg = _calcAverageFromDocs(ratings);
+          return Column(
+            children: [
+              _buildAverageHeader(
+                title: 'Farmers average rating',
+                average: avg,
+                totalCount: ratings.length,
+                accent: Colors.green,
+                icon: Icons.agriculture,
+              ),
+              Expanded(
+                child: Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(
+                        Icons.filter_alt_off,
+                        size: 64,
+                        color: Colors.grey[400],
+                      ),
+                      const SizedBox(height: 16),
+                      Text(
+                        _selectedRatingFilter == null
+                            ? 'No farmer ratings yet'
+                            : 'No ${_selectedRatingFilter}-star farmer ratings',
+                        style: TextStyle(fontSize: 18, color: Colors.grey[600]),
+                      ),
+                    ],
+                  ),
                 ),
-              ],
-            ),
+              ),
+            ],
           );
         }
 
-        return ListView.builder(
-          itemCount: filteredRatings.length,
-          itemBuilder: (context, index) {
-            final doc = filteredRatings[index];
-            final data = doc.data() as Map<String, dynamic>;
-            final rating = (data['rating'] as num?)?.toInt() ?? 0;
-            final comment = data['comment']?.toString() ?? '';
-            final userName = data['userName']?.toString() ?? 'Unknown Farmer';
-            final createdAt = data['createdAt'];
-            DateTime? date;
-            if (createdAt != null) {
-              if (createdAt is Timestamp) {
-                date = createdAt.toDate();
-              } else if (createdAt is String) {
-                date = DateTime.tryParse(createdAt);
-              }
-            }
-
-            return _buildRatingCard(
-              userName: userName,
-              rating: rating,
-              comment: comment,
-              date: date,
+        final avg = _calcAverageFromDocs(ratings);
+        return Column(
+          children: [
+            _buildAverageHeader(
+              title: 'Farmers average rating',
+              average: avg,
+              totalCount: ratings.length,
+              accent: Colors.green,
               icon: Icons.agriculture,
-              color: Colors.green,
-            );
-          },
+            ),
+            Expanded(
+              child: ListView.builder(
+                itemCount: filteredRatings.length,
+                itemBuilder: (context, index) {
+                  final doc = filteredRatings[index];
+                  final data = doc.data() as Map<String, dynamic>;
+                  final rating = (data['rating'] as num?)?.toInt() ?? 0;
+                  final comment = data['comment']?.toString() ?? '';
+                  final userName =
+                      data['userName']?.toString() ?? 'Unknown Farmer';
+                  final createdAt = data['createdAt'];
+                  DateTime? date;
+                  if (createdAt != null) {
+                    if (createdAt is Timestamp) {
+                      date = createdAt.toDate();
+                    } else if (createdAt is String) {
+                      date = DateTime.tryParse(createdAt);
+                    }
+                  }
+
+                  return _buildRatingCard(
+                    userName: userName,
+                    rating: rating,
+                    comment: comment,
+                    date: date,
+                    icon: Icons.agriculture,
+                    color: Colors.green,
+                  );
+                },
+              ),
+            ),
+          ],
         );
       },
     );
@@ -403,59 +528,131 @@ class _RatingsReviewsModalContentState extends State<RatingsReviewsModalContent>
                 }).toList();
 
         if (filteredRatings.isEmpty) {
-          return Center(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(Icons.filter_alt_off, size: 64, color: Colors.grey[400]),
-                const SizedBox(height: 16),
-                Text(
-                  _selectedRatingFilter == null
-                      ? 'No expert ratings yet'
-                      : 'No ${_selectedRatingFilter}-star expert ratings',
-                  style: TextStyle(fontSize: 18, color: Colors.grey[600]),
+          final avgAll = _calcAverageFromDocs(ratings);
+          // Optional breakdown
+          final expertDocs =
+              ratings.where((doc) {
+                final data = doc.data() as Map<String, dynamic>;
+                return (data['userRole']?.toString() ?? '') == 'expert';
+              }).toList();
+          final headDocs =
+              ratings.where((doc) {
+                final data = doc.data() as Map<String, dynamic>;
+                return (data['userRole']?.toString() ?? '') ==
+                    'head_veterinarian';
+              }).toList();
+          final expertAvg = _calcAverageFromDocs(expertDocs);
+          final headAvg = _calcAverageFromDocs(headDocs);
+          final breakdown =
+              'Experts: ${expertDocs.isEmpty ? '0.0' : expertAvg.toStringAsFixed(1)} (${expertDocs.length}) • '
+              'Head Vets: ${headDocs.isEmpty ? '0.0' : headAvg.toStringAsFixed(1)} (${headDocs.length})';
+
+          return Column(
+            children: [
+              _buildAverageHeader(
+                title: 'Experts & Head Vets average rating',
+                average: avgAll,
+                totalCount: ratings.length,
+                breakdownText: breakdown,
+                accent: Colors.purple,
+                icon: Icons.medical_services,
+              ),
+              Expanded(
+                child: Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(
+                        Icons.filter_alt_off,
+                        size: 64,
+                        color: Colors.grey[400],
+                      ),
+                      const SizedBox(height: 16),
+                      Text(
+                        _selectedRatingFilter == null
+                            ? 'No expert ratings yet'
+                            : 'No ${_selectedRatingFilter}-star expert ratings',
+                        style: TextStyle(fontSize: 18, color: Colors.grey[600]),
+                      ),
+                    ],
+                  ),
                 ),
-              ],
-            ),
+              ),
+            ],
           );
         }
 
-        return ListView.builder(
-          itemCount: filteredRatings.length,
-          itemBuilder: (context, index) {
-            final doc = filteredRatings[index];
-            final data = doc.data() as Map<String, dynamic>;
-            final rating = (data['rating'] as num?)?.toInt() ?? 0;
-            final comment = data['comment']?.toString() ?? '';
-            final userName = data['userName']?.toString() ?? 'Unknown Expert';
-            final userRole = data['userRole']?.toString() ?? 'expert';
-            final createdAt = data['createdAt'];
-            DateTime? date;
-            if (createdAt != null) {
-              if (createdAt is Timestamp) {
-                date = createdAt.toDate();
-              } else if (createdAt is String) {
-                date = DateTime.tryParse(createdAt);
-              }
-            }
+        final avgAll = _calcAverageFromDocs(ratings);
+        // Optional breakdown
+        final expertDocs =
+            ratings.where((doc) {
+              final data = doc.data() as Map<String, dynamic>;
+              return (data['userRole']?.toString() ?? '') == 'expert';
+            }).toList();
+        final headDocs =
+            ratings.where((doc) {
+              final data = doc.data() as Map<String, dynamic>;
+              return (data['userRole']?.toString() ?? '') == 'head_veterinarian';
+            }).toList();
+        final expertAvg = _calcAverageFromDocs(expertDocs);
+        final headAvg = _calcAverageFromDocs(headDocs);
+        final breakdown =
+            'Experts: ${expertDocs.isEmpty ? '0.0' : expertAvg.toStringAsFixed(1)} (${expertDocs.length}) • '
+            'Head Vets: ${headDocs.isEmpty ? '0.0' : headAvg.toStringAsFixed(1)} (${headDocs.length})';
 
-            return _buildRatingCard(
-              userName: userName,
-              rating: rating,
-              comment: comment,
-              date: date,
-              icon:
-                  userRole == 'head_veterinarian'
-                      ? Icons.verified_user
-                      : Icons.medical_services,
-              color:
-                  userRole == 'head_veterinarian' ? Colors.blue : Colors.purple,
-              role:
-                  userRole == 'head_veterinarian'
-                      ? 'Head Veterinarian'
-                      : 'Expert',
-            );
-          },
+        return Column(
+          children: [
+            _buildAverageHeader(
+              title: 'Experts & Head Vets average rating',
+              average: avgAll,
+              totalCount: ratings.length,
+              breakdownText: breakdown,
+              accent: Colors.purple,
+              icon: Icons.medical_services,
+            ),
+            Expanded(
+              child: ListView.builder(
+                itemCount: filteredRatings.length,
+                itemBuilder: (context, index) {
+                  final doc = filteredRatings[index];
+                  final data = doc.data() as Map<String, dynamic>;
+                  final rating = (data['rating'] as num?)?.toInt() ?? 0;
+                  final comment = data['comment']?.toString() ?? '';
+                  final userName =
+                      data['userName']?.toString() ?? 'Unknown Expert';
+                  final userRole = data['userRole']?.toString() ?? 'expert';
+                  final createdAt = data['createdAt'];
+                  DateTime? date;
+                  if (createdAt != null) {
+                    if (createdAt is Timestamp) {
+                      date = createdAt.toDate();
+                    } else if (createdAt is String) {
+                      date = DateTime.tryParse(createdAt);
+                    }
+                  }
+
+                  return _buildRatingCard(
+                    userName: userName,
+                    rating: rating,
+                    comment: comment,
+                    date: date,
+                    icon:
+                        userRole == 'head_veterinarian'
+                            ? Icons.verified_user
+                            : Icons.medical_services,
+                    color:
+                        userRole == 'head_veterinarian'
+                            ? Colors.blue
+                            : Colors.purple,
+                    role:
+                        userRole == 'head_veterinarian'
+                            ? 'Head Veterinarian'
+                            : 'Expert',
+                  );
+                },
+              ),
+            ),
+          ],
         );
       },
     );
@@ -533,53 +730,85 @@ class _RatingsReviewsModalContentState extends State<RatingsReviewsModalContent>
                 }).toList();
 
         if (filteredEvaluations.isEmpty) {
-          return Center(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(Icons.filter_alt_off, size: 64, color: Colors.grey[400]),
-                const SizedBox(height: 16),
-                Text(
-                  _selectedRatingFilter == null
-                      ? 'No ML expert evaluations yet'
-                      : 'No ${_selectedRatingFilter}-star ML expert evaluations',
-                  style: TextStyle(fontSize: 18, color: Colors.grey[600]),
+          final avg = _calcAverageFromDocs(evaluations);
+          return Column(
+            children: [
+              _buildAverageHeader(
+                title: 'ML Experts average rating',
+                average: avg,
+                totalCount: evaluations.length,
+                accent: Colors.orange,
+                icon: Icons.smart_toy,
+              ),
+              Expanded(
+                child: Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(
+                        Icons.filter_alt_off,
+                        size: 64,
+                        color: Colors.grey[400],
+                      ),
+                      const SizedBox(height: 16),
+                      Text(
+                        _selectedRatingFilter == null
+                            ? 'No ML expert evaluations yet'
+                            : 'No ${_selectedRatingFilter}-star ML expert evaluations',
+                        style: TextStyle(fontSize: 18, color: Colors.grey[600]),
+                      ),
+                    ],
+                  ),
                 ),
-              ],
-            ),
+              ),
+            ],
           );
         }
 
-        return ListView.builder(
-          itemCount: filteredEvaluations.length,
-          itemBuilder: (context, index) {
-            final doc = filteredEvaluations[index];
-            final data = doc.data() as Map<String, dynamic>;
-            final rating = (data['rating'] as num?)?.toInt() ?? 0;
-            final comment = data['comment']?.toString() ?? '';
-            final evaluatorName =
-                data['evaluatorName']?.toString() ?? 'Unknown ML Expert';
-            final imageCount = (data['imageCount'] as num?)?.toInt() ?? 0;
-            final summary = data['summary']?.toString() ?? '';
-            final createdAt = data['createdAt'];
-            DateTime? date;
-            if (createdAt != null) {
-              if (createdAt is Timestamp) {
-                date = createdAt.toDate();
-              } else if (createdAt is String) {
-                date = DateTime.tryParse(createdAt);
-              }
-            }
+        final avg = _calcAverageFromDocs(evaluations);
+        return Column(
+          children: [
+            _buildAverageHeader(
+              title: 'ML Experts average rating',
+              average: avg,
+              totalCount: evaluations.length,
+              accent: Colors.orange,
+              icon: Icons.smart_toy,
+            ),
+            Expanded(
+              child: ListView.builder(
+                itemCount: filteredEvaluations.length,
+                itemBuilder: (context, index) {
+                  final doc = filteredEvaluations[index];
+                  final data = doc.data() as Map<String, dynamic>;
+                  final rating = (data['rating'] as num?)?.toInt() ?? 0;
+                  final comment = data['comment']?.toString() ?? '';
+                  final evaluatorName =
+                      data['evaluatorName']?.toString() ?? 'Unknown ML Expert';
+                  final imageCount = (data['imageCount'] as num?)?.toInt() ?? 0;
+                  final summary = data['summary']?.toString() ?? '';
+                  final createdAt = data['createdAt'];
+                  DateTime? date;
+                  if (createdAt != null) {
+                    if (createdAt is Timestamp) {
+                      date = createdAt.toDate();
+                    } else if (createdAt is String) {
+                      date = DateTime.tryParse(createdAt);
+                    }
+                  }
 
-            return _buildMLExpertCard(
-              evaluatorName: evaluatorName,
-              rating: rating,
-              comment: comment,
-              date: date,
-              imageCount: imageCount,
-              summary: summary,
-            );
-          },
+                  return _buildMLExpertCard(
+                    evaluatorName: evaluatorName,
+                    rating: rating,
+                    comment: comment,
+                    date: date,
+                    imageCount: imageCount,
+                    summary: summary,
+                  );
+                },
+              ),
+            ),
+          ],
         );
       },
     );

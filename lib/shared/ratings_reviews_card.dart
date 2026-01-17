@@ -84,19 +84,26 @@ class _RatingsReviewsCardState extends State<RatingsReviewsCard> {
                   expertRatingsCount++;
                 }
 
-                // Calculate average from farmers and experts only (excluding ML experts)
-                if (rating != null &&
-                    rating > 0 &&
-                    userRole != 'machine_learning_expert') {
+                // Include all app ratings (farmers, experts, head vets)
+                if (rating != null && rating > 0) {
                   totalRating += rating;
                   ratingCount++;
                 }
               }
             }
 
-            // Count ML expert evaluations
+            // Process ML expert evaluations (include their ratings in overall average)
             if (mlEvaluationsSnapshot.hasData) {
-              mlExpertRatingsCount = mlEvaluationsSnapshot.data!.docs.length;
+              final mlDocs = mlEvaluationsSnapshot.data!.docs;
+              mlExpertRatingsCount = mlDocs.length;
+              for (final doc in mlDocs) {
+                final data = doc.data() as Map<String, dynamic>;
+                final rating = (data['rating'] as num?)?.toDouble();
+                if (rating != null && rating > 0) {
+                  totalRating += rating;
+                  ratingCount++;
+                }
+              }
             }
 
             final averageRating =

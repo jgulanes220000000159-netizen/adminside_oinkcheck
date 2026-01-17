@@ -404,10 +404,10 @@ class _DiseaseMapWidgetState extends State<DiseaseMapWidget>
       final heatmapCircles = <CircleMarker>[];
       final markers = <Marker>[]; // Keep markers for click interaction
 
-      // Fixed absolute thresholds (adjusted for testing with minimal data)
-      const int lowThreshold = 2; // Low: 1-2 cases
-      const int mediumThreshold = 4; // Medium: 3-4 cases
-      // High: 5+ cases
+      // Fixed absolute thresholds
+      const int lowThreshold = 24; // Low: 0-24 cases
+      const int mediumThreshold = 49; // Medium: 25-49 cases
+      // High: 50+ cases
 
       for (final a in agg.values) {
         // Must have coordinates
@@ -438,22 +438,22 @@ class _DiseaseMapWidgetState extends State<DiseaseMapWidget>
         double intensity; // 0.0 to 1.0 for color gradient
 
         if (count <= lowThreshold) {
-          // Low: 1-2 cases
-          // Normalize within low range: 1 case = 0.0, 2 cases = 0.33
+          // Low: 0-24 cases
+          // Normalize within low range: 0 cases = 0.0, 24 cases = 0.33
           intensity = (count / lowThreshold) * 0.33;
         } else if (count <= mediumThreshold) {
-          // Medium: 3-4 cases
-          // Normalize within medium range: 3 cases = 0.33, 4 cases = 0.67
+          // Medium: 25-49 cases
+          // Normalize within medium range: 25 cases = 0.33, 49 cases = 0.67
           intensity =
               0.33 +
               ((count - lowThreshold) / (mediumThreshold - lowThreshold)) *
                   0.34;
         } else {
-          // High: 5+ cases
-          // Normalize within high range: 5 cases = 0.67, scale up quickly for higher counts
+          // High: 50+ cases
+          // Normalize within high range: 50 cases = 0.67, scale up for higher counts
           final excess = count - mediumThreshold;
-          // For testing thresholds (5+), scale more aggressively: 5 cases = 0.67, 10+ cases = 1.0
-          intensity = 0.67 + (math.min(excess / 5.0, 1.0) * 0.33);
+          // Scale: 50 cases = 0.67, 100+ cases = 1.0
+          intensity = 0.67 + (math.min(excess / 50.0, 1.0) * 0.33);
         }
 
         // Calculate circle size based on count category (reduced for more compact display)
@@ -470,7 +470,7 @@ class _DiseaseMapWidgetState extends State<DiseaseMapWidget>
         } else {
           // High: 3km to 5km (capped)
           final excess = count - mediumThreshold;
-          radius = 3000.0 + (math.min(excess / 50.0, 1.0) * 2000.0);
+          radius = 3000.0 + (math.min(excess / 100.0, 1.0) * 2000.0);
         }
 
         // Get heatmap color based on intensity
@@ -637,10 +637,10 @@ class _DiseaseMapWidgetState extends State<DiseaseMapWidget>
   /// Get heatmap color based on intensity (0.0 to 1.0)
   /// Returns gradient from green (low) -> yellow (medium) -> red (high)
   ///
-  /// Fixed Absolute Thresholds (for testing):
-  /// - Low (Green): 1-2 cases
-  /// - Medium (Yellow): 3-4 cases
-  /// - High (Red): 5+ cases
+  /// Fixed Absolute Thresholds:
+  /// - Low (Green): 0-24 cases
+  /// - Medium (Yellow): 25-49 cases
+  /// - High (Red): 50+ cases
   Color _getHeatmapColor(double intensity) {
     if (intensity <= 0.0) return const Color(0xFF4CAF50); // Green
     if (intensity >= 1.0) return const Color(0xFFF44336); // Red
@@ -682,10 +682,10 @@ class _DiseaseMapWidgetState extends State<DiseaseMapWidget>
   }
 
   /// Get intensity category label based on actual count
-  /// Uses fixed absolute thresholds (adjusted for testing)
+  /// Uses fixed absolute thresholds
   String _getIntensityLabelFromCount(int count) {
-    if (count <= 2) return 'Low';
-    if (count <= 4) return 'Medium';
+    if (count <= 24) return 'Low';
+    if (count <= 49) return 'Medium';
     return 'High';
   }
 
@@ -722,7 +722,7 @@ class _DiseaseMapWidgetState extends State<DiseaseMapWidget>
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      'Thresholds: Low (1-2 cases) | Medium (3-4 cases) | High (5+ cases)',
+                      'Thresholds: Low (0-24 cases) | Medium (25-49 cases) | High (50+ cases)',
                       style: TextStyle(color: Colors.grey[700], fontSize: 11),
                     ),
                   ],

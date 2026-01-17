@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:url_launcher/url_launcher.dart';
 
 class Settings extends StatefulWidget {
   final VoidCallback? onViewReports;
@@ -163,6 +165,115 @@ class _SettingsState extends State<Settings> {
           backgroundColor: Colors.green,
         ),
       );
+    }
+  }
+
+  // Open email client
+  Future<void> _openEmailClient() async {
+    const email = 'jgulanes_220000000159@uic.edu.ph';
+    final adminName = (_adminName ?? 'Admin').trim();
+
+    final mailtoUri = Uri(
+      scheme: 'mailto',
+      path: email,
+      queryParameters: {
+        'subject': 'Admin Web Support Request',
+        'body':
+            'Hi Developer,\n\n'
+            'Issue:\n'
+            '- \n\n'
+            'Thank you,\n'
+            '$adminName',
+      },
+    );
+
+    final gmailComposeUri = Uri(
+      scheme: 'https',
+      host: 'mail.google.com',
+      path: '/mail/u/0/',
+      queryParameters: {
+        'view': 'cm',
+        'fs': '1',
+        'tf': '1',
+        'to': email,
+        'su': 'Admin Web Support Request',
+        'body':
+            'Hi Developer,\n\n'
+            'Issue:\n'
+            '- \n\n'
+            'Thank you,\n'
+            '$adminName',
+      },
+    );
+
+    try {
+      // On web, go straight to Gmail compose (more reliable than mailto:).
+      if (kIsWeb) {
+        final launchedGmail = await launchUrl(
+          gmailComposeUri,
+          mode: LaunchMode.platformDefault,
+          webOnlyWindowName: '_blank',
+        );
+
+        if (launchedGmail) return;
+
+        // Fallback: try mailto: (works if a mail handler is configured)
+        final launchedMailto = await launchUrl(
+          mailtoUri,
+          mode: LaunchMode.platformDefault,
+          webOnlyWindowName: '_blank',
+        );
+
+        if (!launchedMailto && mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                'Could not open email. Try emailing $email directly.',
+              ),
+              backgroundColor: Colors.orange,
+            ),
+          );
+        }
+
+        return;
+      }
+
+      // Mobile/Desktop: use mailto:
+      final canLaunch = await canLaunchUrl(mailtoUri);
+      if (!canLaunch) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Could not open email client. Email: $email'),
+              backgroundColor: Colors.orange,
+            ),
+          );
+        }
+        return;
+      }
+
+      final launched = await launchUrl(
+        mailtoUri,
+        mode: LaunchMode.platformDefault,
+      );
+
+      if (!launched && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Could not open email client. Email: $email'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error opening email: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
     }
   }
 
@@ -1272,6 +1383,58 @@ class _SettingsState extends State<Settings> {
                           );
                         },
                       );
+                    },
+                  ),
+                ],
+              ),
+            ),
+
+            const SizedBox(height: 24),
+
+            // Contact Section
+            Card(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Padding(
+                    padding: EdgeInsets.all(16),
+                    child: Text(
+                      'Contact',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.green,
+                      ),
+                    ),
+                  ),
+                  ListTile(
+                    leading: const Icon(Icons.email),
+                    title: const Text('Contact Developer'),
+                    subtitle: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const SizedBox(height: 4),
+                        const Text('Send us an email for support or feedback'),
+                        const SizedBox(height: 8),
+                        GestureDetector(
+                          onTap: () async {
+                            await _openEmailClient();
+                          },
+                          child: Text(
+                            'jgulanes_220000000159@uic.edu.ph',
+                            style: TextStyle(
+                              color: Colors.blue[700],
+                              fontSize: 14,
+                              fontWeight: FontWeight.w500,
+                              decoration: TextDecoration.underline,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    trailing: const Icon(Icons.arrow_forward_ios, size: 16),
+                    onTap: () async {
+                      await _openEmailClient();
                     },
                   ),
                 ],
