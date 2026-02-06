@@ -57,15 +57,17 @@ class ReportPdfService {
           break;
         case 'Last Month':
           final prevMonth = nowForRange.month == 1 ? 12 : nowForRange.month - 1;
-          final prevYear = nowForRange.month == 1 ? nowForRange.year - 1 : nowForRange.year;
+          final prevYear =
+              nowForRange.month == 1 ? nowForRange.year - 1 : nowForRange.year;
           startDate = DateTime(prevYear, prevMonth, 1);
           endDate = DateTime(nowForRange.year, nowForRange.month, 1);
           break;
         case 'All Time':
           // For All Time, calculate from completed reports
-          final completedReports = allRequests
-              .where((r) => (r['status'] ?? '').toString() == 'completed')
-              .toList();
+          final completedReports =
+              allRequests
+                  .where((r) => (r['status'] ?? '').toString() == 'completed')
+                  .toList();
           if (completedReports.isNotEmpty) {
             DateTime? earliestDate;
             DateTime? latestDate;
@@ -87,8 +89,16 @@ class ReportPdfService {
               }
             }
             if (earliestDate != null && latestDate != null) {
-              startDate = DateTime(earliestDate.year, earliestDate.month, earliestDate.day);
-              endDate = DateTime(latestDate.year, latestDate.month, latestDate.day);
+              startDate = DateTime(
+                earliestDate.year,
+                earliestDate.month,
+                earliestDate.day,
+              );
+              endDate = DateTime(
+                latestDate.year,
+                latestDate.month,
+                latestDate.day,
+              );
             } else {
               endDate = nowForRange;
               startDate = endDate.subtract(const Duration(days: 30));
@@ -1525,6 +1535,14 @@ class ReportPdfService {
       case 'swine pox':
       case 'swinepox':
         return pdf.PdfColor(0x43 / 255, 0xA0 / 255, 0x47 / 255);
+
+      // Dermatitis — Cyan/Teal (#00ACC1)
+      case 'dermatitis':
+        return pdf.PdfColor(0x00 / 255, 0xAC / 255, 0xC1 / 255);
+
+      // Pityriasis Rosea — Deep Purple (#5E35B1)
+      case 'pityriasis rosea':
+        return pdf.PdfColor(0x5E / 255, 0x35 / 255, 0xB1 / 255);
 
       // Unknown — Grey (fallback)
       case 'unknown':

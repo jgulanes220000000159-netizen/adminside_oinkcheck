@@ -543,9 +543,10 @@ class _ReportsState extends State<Reports> {
           break;
         case 'All Time':
           // Get all completed reports and find first and last
-          final completedReports = scanRequests
-              .where((r) => (r['status'] ?? '').toString() == 'completed')
-              .toList();
+          final completedReports =
+              scanRequests
+                  .where((r) => (r['status'] ?? '').toString() == 'completed')
+                  .toList();
           if (completedReports.isNotEmpty) {
             DateTime? earliestDate;
             DateTime? latestDate;
@@ -553,7 +554,8 @@ class _ReportsState extends State<Reports> {
               final createdAtRaw = r['createdAt'];
               DateTime? createdAt;
               if (createdAtRaw is Timestamp) createdAt = createdAtRaw.toDate();
-              if (createdAtRaw is String) createdAt = DateTime.tryParse(createdAtRaw);
+              if (createdAtRaw is String)
+                createdAt = DateTime.tryParse(createdAtRaw);
               if (createdAt != null) {
                 if (earliestDate == null || createdAt.isBefore(earliestDate)) {
                   earliestDate = createdAt;
@@ -564,8 +566,16 @@ class _ReportsState extends State<Reports> {
               }
             }
             if (earliestDate != null && latestDate != null) {
-              startInclusive = DateTime(earliestDate.year, earliestDate.month, earliestDate.day);
-              endExclusive = DateTime(latestDate.year, latestDate.month, latestDate.day).add(const Duration(days: 1));
+              startInclusive = DateTime(
+                earliestDate.year,
+                earliestDate.month,
+                earliestDate.day,
+              );
+              endExclusive = DateTime(
+                latestDate.year,
+                latestDate.month,
+                latestDate.day,
+              ).add(const Duration(days: 1));
             } else {
               startInclusive = now.subtract(const Duration(days: 30));
               endExclusive = now;
@@ -1091,19 +1101,23 @@ class _ReportsState extends State<Reports> {
             endExclusive = DateTime(now.year, now.month, 1);
             break;
           case 'All Time':
-            final completedReports = cityFiltered
-                .where((r) => (r['status'] ?? '').toString() == 'completed')
-                .toList();
+            final completedReports =
+                cityFiltered
+                    .where((r) => (r['status'] ?? '').toString() == 'completed')
+                    .toList();
             if (completedReports.isNotEmpty) {
               DateTime? earliestDate;
               DateTime? latestDate;
               for (final r in completedReports) {
                 final createdAtRaw = r['createdAt'];
                 DateTime? createdAt;
-                if (createdAtRaw is Timestamp) createdAt = createdAtRaw.toDate();
-                if (createdAtRaw is String) createdAt = DateTime.tryParse(createdAtRaw);
+                if (createdAtRaw is Timestamp)
+                  createdAt = createdAtRaw.toDate();
+                if (createdAtRaw is String)
+                  createdAt = DateTime.tryParse(createdAtRaw);
                 if (createdAt != null) {
-                  if (earliestDate == null || createdAt.isBefore(earliestDate)) {
+                  if (earliestDate == null ||
+                      createdAt.isBefore(earliestDate)) {
                     earliestDate = createdAt;
                   }
                   if (latestDate == null || createdAt.isAfter(latestDate)) {
@@ -1112,8 +1126,16 @@ class _ReportsState extends State<Reports> {
                 }
               }
               if (earliestDate != null && latestDate != null) {
-                startInclusive = DateTime(earliestDate.year, earliestDate.month, earliestDate.day);
-                endExclusive = DateTime(latestDate.year, latestDate.month, latestDate.day).add(const Duration(days: 1));
+                startInclusive = DateTime(
+                  earliestDate.year,
+                  earliestDate.month,
+                  earliestDate.day,
+                );
+                endExclusive = DateTime(
+                  latestDate.year,
+                  latestDate.month,
+                  latestDate.day,
+                ).add(const Duration(days: 1));
               } else {
                 startInclusive = now.subtract(const Duration(days: 30));
                 endExclusive = now;
@@ -1855,41 +1877,71 @@ class _ReportsState extends State<Reports> {
                                 endExclusive = now;
                                 break;
                               case 'Last Month':
-                                final prevMonth = now.month == 1 ? 12 : now.month - 1;
-                                final prevYear = now.month == 1 ? now.year - 1 : now.year;
-                                startInclusive = DateTime(prevYear, prevMonth, 1);
+                                final prevMonth =
+                                    now.month == 1 ? 12 : now.month - 1;
+                                final prevYear =
+                                    now.month == 1 ? now.year - 1 : now.year;
+                                startInclusive = DateTime(
+                                  prevYear,
+                                  prevMonth,
+                                  1,
+                                );
                                 endExclusive = DateTime(now.year, now.month, 1);
                                 break;
                               case 'All Time':
-                                final completedReports = cityFiltered
-                                    .where((r) => (r['status'] ?? '').toString() == 'completed')
-                                    .toList();
+                                final completedReports =
+                                    cityFiltered
+                                        .where(
+                                          (r) =>
+                                              (r['status'] ?? '').toString() ==
+                                              'completed',
+                                        )
+                                        .toList();
                                 if (completedReports.isNotEmpty) {
                                   DateTime? earliestDate;
                                   DateTime? latestDate;
                                   for (final r in completedReports) {
                                     final createdAtRaw = r['createdAt'];
                                     DateTime? createdAt;
-                                    if (createdAtRaw is Timestamp) createdAt = createdAtRaw.toDate();
-                                    if (createdAtRaw is String) createdAt = DateTime.tryParse(createdAtRaw);
+                                    if (createdAtRaw is Timestamp)
+                                      createdAt = createdAtRaw.toDate();
+                                    if (createdAtRaw is String)
+                                      createdAt = DateTime.tryParse(
+                                        createdAtRaw,
+                                      );
                                     if (createdAt != null) {
-                                      if (earliestDate == null || createdAt.isBefore(earliestDate)) {
+                                      if (earliestDate == null ||
+                                          createdAt.isBefore(earliestDate)) {
                                         earliestDate = createdAt;
                                       }
-                                      if (latestDate == null || createdAt.isAfter(latestDate)) {
+                                      if (latestDate == null ||
+                                          createdAt.isAfter(latestDate)) {
                                         latestDate = createdAt;
                                       }
                                     }
                                   }
-                                  if (earliestDate != null && latestDate != null) {
-                                    startInclusive = DateTime(earliestDate.year, earliestDate.month, earliestDate.day);
-                                    endExclusive = DateTime(latestDate.year, latestDate.month, latestDate.day).add(const Duration(days: 1));
+                                  if (earliestDate != null &&
+                                      latestDate != null) {
+                                    startInclusive = DateTime(
+                                      earliestDate.year,
+                                      earliestDate.month,
+                                      earliestDate.day,
+                                    );
+                                    endExclusive = DateTime(
+                                      latestDate.year,
+                                      latestDate.month,
+                                      latestDate.day,
+                                    ).add(const Duration(days: 1));
                                   } else {
-                                    startInclusive = now.subtract(const Duration(days: 30));
+                                    startInclusive = now.subtract(
+                                      const Duration(days: 30),
+                                    );
                                     endExclusive = now;
                                   }
                                 } else {
-                                  startInclusive = now.subtract(const Duration(days: 30));
+                                  startInclusive = now.subtract(
+                                    const Duration(days: 30),
+                                  );
                                   endExclusive = now;
                                 }
                                 break;
@@ -1920,9 +1972,15 @@ class _ReportsState extends State<Reports> {
                                 endExclusive = now;
                                 break;
                               default:
-                                final prevMonth = now.month == 1 ? 12 : now.month - 1;
-                                final prevYear = now.month == 1 ? now.year - 1 : now.year;
-                                startInclusive = DateTime(prevYear, prevMonth, 1);
+                                final prevMonth =
+                                    now.month == 1 ? 12 : now.month - 1;
+                                final prevYear =
+                                    now.month == 1 ? now.year - 1 : now.year;
+                                startInclusive = DateTime(
+                                  prevYear,
+                                  prevMonth,
+                                  1,
+                                );
                                 endExclusive = DateTime(now.year, now.month, 1);
                             }
                           }
@@ -5509,10 +5567,10 @@ class _DiseaseDistributionChartState extends State<DiseaseDistributionChart> {
           end: DateTime(now.year, now.month, 1),
         );
       case 'All Time':
-        // Return a very wide range - actual filtering will be done by service methods
+        // Very wide range; end is "tomorrow" so that today's data is included
         return DateTimeRange(
           start: DateTime(2000, 1, 1),
-          end: now,
+          end: now.add(const Duration(days: 1)),
         );
       case 'Last 30 Days':
         return DateTimeRange(
@@ -5749,12 +5807,23 @@ class _DiseaseDistributionChartState extends State<DiseaseDistributionChart> {
             if (lower.contains('tip burn') || lower.contains('unknown'))
               continue;
 
-            // Normalize disease name for consistent matching (replace underscores/hyphens with spaces)
-            final normalized =
+            // Normalize disease name for consistent matching
+            // - Replace underscores/hyphens with spaces
+            // - Remove extra spaces
+            // - Canonicalize dermatit(is) and pityriasis variants
+            var normalized =
                 lower
                     .replaceAll(RegExp(r'[_\-]+'), ' ')
                     .replaceAll(RegExp(r'\s+'), ' ')
                     .trim();
+
+            if (normalized.contains('dermatitis') ||
+                normalized.contains('dermatatis')) {
+              // Canonical label for reporting/legend
+              normalized = 'dermatitis';
+            } else if (normalized.contains('pityriasis')) {
+              normalized = 'pityriasis rosea';
+            }
 
             // Add disease type to set (each report contributes 1 per disease type)
             diseasesInReport.add(normalized);
@@ -5788,8 +5857,8 @@ class _DiseaseDistributionChartState extends State<DiseaseDistributionChart> {
               )
               .toList()
             ..sort((a, b) => b.value.compareTo(a.value));
-      // Show all diseases (or up to 20 to avoid overcrowding)
-      final top = totals.take(20).map((e) => e.key).toList();
+      // Show all diseases that appear in the range (no top-20 cutoff)
+      final top = totals.map((e) => e.key).toList();
 
       final Map<String, List<double>> series = {};
       for (final name in top) {
@@ -6338,6 +6407,15 @@ class _DiseaseDistributionChartState extends State<DiseaseDistributionChart> {
       case 'swinepox':
         return const Color(0xFF43A047);
 
+      // Dermatitis — Cyan/Teal (#00ACC1)
+      case 'dermatitis':
+        return const Color(0xFF00ACC1);
+
+      // Pityriasis Rosea — Deep Purple (#5E35B1)
+      // Model/display label: "Pityriasis Rosea"
+      case 'pityriasis rosea':
+        return const Color(0xFF5E35B1);
+
       // Unknown — Grey (fallback)
       case 'unknown':
       case 'tip burn':
@@ -6348,17 +6426,21 @@ class _DiseaseDistributionChartState extends State<DiseaseDistributionChart> {
   }
 
   /// Get farmers with a specific disease
-  Future<List<Map<String, dynamic>>> _getFarmersWithDisease(String diseaseName) async {
+  Future<List<Map<String, dynamic>>> _getFarmersWithDisease(
+    String diseaseName,
+  ) async {
     try {
       final allRequests = await ScanRequestsService.getScanRequests();
-      
+
       // Filter by city if not 'All'
       var filtered = allRequests;
       if (widget.selectedCity != 'All') {
-        filtered = filtered.where((request) {
-          final city = (request['cityMunicipality'] ?? '').toString().trim();
-          return city.toLowerCase() == widget.selectedCity.toLowerCase();
-        }).toList();
+        filtered =
+            filtered.where((request) {
+              final city =
+                  (request['cityMunicipality'] ?? '').toString().trim();
+              return city.toLowerCase() == widget.selectedCity.toLowerCase();
+            }).toList();
       }
 
       // Filter by time range
@@ -6371,7 +6453,7 @@ class _DiseaseDistributionChartState extends State<DiseaseDistributionChart> {
       final now = DateTime.now();
       DateTime startInclusive;
       DateTime endExclusive;
-      
+
       if (widget.selectedTimeRange.startsWith('Custom (') ||
           widget.selectedTimeRange.startsWith('Monthly (')) {
         final regex = RegExp(
@@ -6382,7 +6464,11 @@ class _DiseaseDistributionChartState extends State<DiseaseDistributionChart> {
           final s = DateTime.parse(match.group(1)!);
           final e = DateTime.parse(match.group(2)!);
           startInclusive = DateTime(s.year, s.month, s.day);
-          endExclusive = DateTime(e.year, e.month, e.day).add(const Duration(days: 1));
+          endExclusive = DateTime(
+            e.year,
+            e.month,
+            e.day,
+          ).add(const Duration(days: 1));
         } else {
           final prevMonth = now.month == 1 ? 12 : now.month - 1;
           final prevYear = now.month == 1 ? now.year - 1 : now.year;
@@ -6399,19 +6485,23 @@ class _DiseaseDistributionChartState extends State<DiseaseDistributionChart> {
             break;
           case 'All Time':
             // For All Time, get ALL completed reports (not filtered) to find first and last
-            final allCompletedReports = allRequests
-                .where((r) => (r['status'] ?? '').toString() == 'completed')
-                .toList();
+            final allCompletedReports =
+                allRequests
+                    .where((r) => (r['status'] ?? '').toString() == 'completed')
+                    .toList();
             if (allCompletedReports.isNotEmpty) {
               DateTime? earliestDate;
               DateTime? latestDate;
               for (final r in allCompletedReports) {
                 final createdAtRaw = r['createdAt'];
                 DateTime? createdAt;
-                if (createdAtRaw is Timestamp) createdAt = createdAtRaw.toDate();
-                if (createdAtRaw is String) createdAt = DateTime.tryParse(createdAtRaw);
+                if (createdAtRaw is Timestamp)
+                  createdAt = createdAtRaw.toDate();
+                if (createdAtRaw is String)
+                  createdAt = DateTime.tryParse(createdAtRaw);
                 if (createdAt != null) {
-                  if (earliestDate == null || createdAt.isBefore(earliestDate)) {
+                  if (earliestDate == null ||
+                      createdAt.isBefore(earliestDate)) {
                     earliestDate = createdAt;
                   }
                   if (latestDate == null || createdAt.isAfter(latestDate)) {
@@ -6420,8 +6510,16 @@ class _DiseaseDistributionChartState extends State<DiseaseDistributionChart> {
                 }
               }
               if (earliestDate != null && latestDate != null) {
-                startInclusive = DateTime(earliestDate.year, earliestDate.month, earliestDate.day);
-                endExclusive = DateTime(latestDate.year, latestDate.month, latestDate.day).add(const Duration(days: 1));
+                startInclusive = DateTime(
+                  earliestDate.year,
+                  earliestDate.month,
+                  earliestDate.day,
+                );
+                endExclusive = DateTime(
+                  latestDate.year,
+                  latestDate.month,
+                  latestDate.day,
+                ).add(const Duration(days: 1));
               } else {
                 // Fallback: use a very wide range
                 startInclusive = DateTime(2000, 1, 1);
@@ -6443,10 +6541,10 @@ class _DiseaseDistributionChartState extends State<DiseaseDistributionChart> {
 
       // Normalize disease name for comparison
       final normalizedDiseaseName = diseaseName.toLowerCase().trim();
-      
+
       // Filter by disease and get unique farmers
       final Map<String, Map<String, dynamic>> uniqueFarmers = {};
-      
+
       for (final request in filtered) {
         final status = (request['status'] ?? '').toString();
         if (status != 'completed') continue;
@@ -6458,45 +6556,52 @@ class _DiseaseDistributionChartState extends State<DiseaseDistributionChart> {
           final createdAtRaw = request['createdAt'];
           DateTime? createdAt;
           if (createdAtRaw is Timestamp) createdAt = createdAtRaw.toDate();
-          if (createdAtRaw is String) createdAt = DateTime.tryParse(createdAtRaw);
+          if (createdAtRaw is String)
+            createdAt = DateTime.tryParse(createdAtRaw);
           if (createdAt == null) continue;
-          if (createdAt.isBefore(startInclusive) || !createdAt.isBefore(endExclusive)) continue;
+          if (createdAt.isBefore(startInclusive) ||
+              !createdAt.isBefore(endExclusive))
+            continue;
         }
 
         // Check expert disease summary
         final expertDiseaseSummary = request['expertDiseaseSummary'];
-        if (expertDiseaseSummary == null || !(expertDiseaseSummary is List)) continue;
-        
+        if (expertDiseaseSummary == null || !(expertDiseaseSummary is List))
+          continue;
+
         final diseaseSummary = expertDiseaseSummary as List<dynamic>;
         bool hasDisease = false;
-        
+
         for (final d in diseaseSummary) {
           if (d is Map<String, dynamic>) {
-            final rawName = (d['name'] ?? d['label'] ?? d['disease'] ?? '').toString();
-            final normalized = _getDiseaseDisplayName(rawName).toLowerCase().trim();
+            final rawName =
+                (d['name'] ?? d['label'] ?? d['disease'] ?? '').toString();
+            final normalized =
+                _getDiseaseDisplayName(rawName).toLowerCase().trim();
             if (normalized == normalizedDiseaseName) {
               hasDisease = true;
               break;
             }
           }
         }
-        
+
         if (hasDisease) {
           final userName = (request['userName'] ?? 'Unknown').toString();
           final userId = (request['userId'] ?? '').toString();
           final key = '$userId|$userName';
-          
+
           if (!uniqueFarmers.containsKey(key)) {
             uniqueFarmers[key] = {
               'userName': userName,
-              'cityMunicipality': (request['cityMunicipality'] ?? '').toString(),
+              'cityMunicipality':
+                  (request['cityMunicipality'] ?? '').toString(),
               'province': (request['province'] ?? '').toString(),
               'barangay': (request['barangay'] ?? '').toString(),
             };
           }
         }
       }
-      
+
       return uniqueFarmers.values.toList();
     } catch (e) {
       return [];
@@ -6507,10 +6612,11 @@ class _DiseaseDistributionChartState extends State<DiseaseDistributionChart> {
   void _showFarmerDetailsModal(BuildContext context, String diseaseName) {
     showDialog(
       context: context,
-      builder: (context) => _FarmerDetailsDialog(
-        diseaseName: diseaseName,
-        getFarmers: _getFarmersWithDisease,
-      ),
+      builder:
+          (context) => _FarmerDetailsDialog(
+            diseaseName: diseaseName,
+            getFarmers: _getFarmersWithDisease,
+          ),
     );
   }
 
@@ -6678,7 +6784,51 @@ class _DiseaseDistributionChartState extends State<DiseaseDistributionChart> {
                                       ),
                                     ],
                                   ),
-                                  const SizedBox(height: 24),
+                                  const SizedBox(height: 12),
+                                  // Legend row: disease name + color so admin can match bars to diseases
+                                  if (diseaseData.isNotEmpty)
+                                    Padding(
+                                      padding: const EdgeInsets.only(
+                                        bottom: 8.0,
+                                      ),
+                                      child: Wrap(
+                                        spacing: 12,
+                                        runSpacing: 8,
+                                        children:
+                                            diseaseData.map((d) {
+                                              final name =
+                                                  (d['name'] ?? '').toString();
+                                              return Row(
+                                                mainAxisSize: MainAxisSize.min,
+                                                children: [
+                                                  Container(
+                                                    width: 10,
+                                                    height: 10,
+                                                    decoration: BoxDecoration(
+                                                      color: _getDiseaseColor(
+                                                        name,
+                                                      ),
+                                                      shape: BoxShape.circle,
+                                                    ),
+                                                  ),
+                                                  const SizedBox(width: 4),
+                                                  Text(
+                                                    name,
+                                                    style: TextStyle(
+                                                      fontSize: 12,
+                                                      fontWeight:
+                                                          FontWeight.w600,
+                                                      color: _getDiseaseColor(
+                                                        name,
+                                                      ),
+                                                    ),
+                                                  ),
+                                                ],
+                                              );
+                                            }).toList(),
+                                      ),
+                                    ),
+                                  const SizedBox(height: 4),
                                   Expanded(
                                     child:
                                         (diseaseData.isEmpty &&
@@ -6743,13 +6893,31 @@ class _DiseaseDistributionChartState extends State<DiseaseDistributionChart> {
                                                           );
                                                         },
                                                       ),
-                                                      touchCallback: (FlTouchEvent event, barTouchResponse) {
-                                                        if (barTouchResponse?.spot == null) return;
-                                                        if (event is FlTapUpEvent) {
-                                                          final groupIndex = barTouchResponse!.spot!.touchedBarGroupIndex;
-                                                          if (groupIndex < 0 || groupIndex >= sortedDiseases.length) return;
-                                                          final disease = sortedDiseases[groupIndex];
-                                                          _showFarmerDetailsModal(context, disease['name']);
+                                                      touchCallback: (
+                                                        FlTouchEvent event,
+                                                        barTouchResponse,
+                                                      ) {
+                                                        if (barTouchResponse
+                                                                ?.spot ==
+                                                            null)
+                                                          return;
+                                                        if (event
+                                                            is FlTapUpEvent) {
+                                                          final groupIndex =
+                                                              barTouchResponse!
+                                                                  .spot!
+                                                                  .touchedBarGroupIndex;
+                                                          if (groupIndex < 0 ||
+                                                              groupIndex >=
+                                                                  sortedDiseases
+                                                                      .length)
+                                                            return;
+                                                          final disease =
+                                                              sortedDiseases[groupIndex];
+                                                          _showFarmerDetailsModal(
+                                                            context,
+                                                            disease['name'],
+                                                          );
                                                         }
                                                       },
                                                     ),
@@ -6778,66 +6946,42 @@ class _DiseaseDistributionChartState extends State<DiseaseDistributionChart> {
                                                                   const EdgeInsets.only(
                                                                     top: 8.0,
                                                                   ),
-                                                              child: Column(
-                                                                mainAxisSize:
-                                                                    MainAxisSize
-                                                                        .min,
-                                                                children: [
-                                                                  Text(
-                                                                    disease['name'],
-                                                                    style: TextStyle(
-                                                                      color: _getDiseaseColor(
-                                                                        disease['name'],
-                                                                      ),
-                                                                      fontWeight:
-                                                                          FontWeight
-                                                                              .w600,
-                                                                      fontSize:
-                                                                          14,
-                                                                    ),
-                                                                    textAlign:
-                                                                        TextAlign
-                                                                            .center,
-                                                                  ),
-                                                                  const SizedBox(
-                                                                    height: 6,
-                                                                  ),
-                                                                  Container(
-                                                                    padding: const EdgeInsets.symmetric(
+                                                              child: Container(
+                                                                padding:
+                                                                    const EdgeInsets.symmetric(
                                                                       horizontal:
                                                                           8,
                                                                       vertical:
                                                                           2,
                                                                     ),
-                                                                    decoration: BoxDecoration(
-                                                                      color: _getDiseaseColor(
-                                                                        disease['name'],
-                                                                      ).withOpacity(
-                                                                        0.1,
-                                                                      ),
-                                                                      borderRadius:
-                                                                          BorderRadius.circular(
-                                                                            12,
-                                                                          ),
-                                                                    ),
-                                                                    child: Text(
-                                                                      '${(disease['percentage'] * 100).toStringAsFixed(1)}%',
-                                                                      style: TextStyle(
-                                                                        color: _getDiseaseColor(
-                                                                          disease['name'],
-                                                                        ),
-                                                                        fontWeight:
-                                                                            FontWeight.w500,
-                                                                        fontSize:
-                                                                            12,
-                                                                      ),
-                                                                    ),
+                                                                decoration: BoxDecoration(
+                                                                  color: _getDiseaseColor(
+                                                                    disease['name'],
+                                                                  ).withOpacity(
+                                                                    0.1,
                                                                   ),
-                                                                ],
+                                                                  borderRadius:
+                                                                      BorderRadius.circular(
+                                                                        12,
+                                                                      ),
+                                                                ),
+                                                                child: Text(
+                                                                  '${(disease['percentage'] * 100).toStringAsFixed(1)}%',
+                                                                  style: TextStyle(
+                                                                    color: _getDiseaseColor(
+                                                                      disease['name'],
+                                                                    ),
+                                                                    fontWeight:
+                                                                        FontWeight
+                                                                            .w500,
+                                                                    fontSize:
+                                                                        12,
+                                                                  ),
+                                                                ),
                                                               ),
                                                             );
                                                           },
-                                                          reservedSize: 72,
+                                                          reservedSize: 40,
                                                         ),
                                                       ),
                                                       leftTitles: AxisTitles(
@@ -7303,9 +7447,7 @@ class _FarmerDetailsDialogState extends State<_FarmerDetailsDialog> {
   @override
   Widget build(BuildContext context) {
     return Dialog(
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
-      ),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       child: Container(
         width: MediaQuery.of(context).size.width * 0.9,
         height: MediaQuery.of(context).size.height * 0.7,
@@ -7333,23 +7475,22 @@ class _FarmerDetailsDialogState extends State<_FarmerDetailsDialog> {
             ),
             const SizedBox(height: 16),
             if (_loading)
-              const Expanded(
-                child: Center(child: CircularProgressIndicator()),
-              )
+              const Expanded(child: Center(child: CircularProgressIndicator()))
             else if (_farmers.isEmpty)
               Expanded(
                 child: Center(
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Icon(Icons.people_outline, size: 64, color: Colors.grey[400]),
+                      Icon(
+                        Icons.people_outline,
+                        size: 64,
+                        color: Colors.grey[400],
+                      ),
                       const SizedBox(height: 16),
                       Text(
                         'No farmers found',
-                        style: TextStyle(
-                          fontSize: 16,
-                          color: Colors.grey[600],
-                        ),
+                        style: TextStyle(fontSize: 16, color: Colors.grey[600]),
                       ),
                     ],
                   ),
@@ -7367,7 +7508,7 @@ class _FarmerDetailsDialogState extends State<_FarmerDetailsDialog> {
                     final city = (farmer['cityMunicipality'] ?? '').toString();
                     final province = (farmer['province'] ?? '').toString();
                     final barangay = (farmer['barangay'] ?? '').toString();
-                    
+
                     String address = '';
                     if (barangay.isNotEmpty) address += barangay;
                     if (city.isNotEmpty) {
@@ -7393,10 +7534,7 @@ class _FarmerDetailsDialogState extends State<_FarmerDetailsDialog> {
                         ),
                         leading: CircleAvatar(
                           backgroundColor: Colors.green[100],
-                          child: Icon(
-                            Icons.person,
-                            color: Colors.green[700],
-                          ),
+                          child: Icon(Icons.person, color: Colors.green[700]),
                         ),
                         title: Text(
                           farmer['userName'] ?? 'Unknown',
@@ -7409,7 +7547,11 @@ class _FarmerDetailsDialogState extends State<_FarmerDetailsDialog> {
                           padding: const EdgeInsets.only(top: 4),
                           child: Row(
                             children: [
-                              Icon(Icons.location_on, size: 16, color: Colors.grey[600]),
+                              Icon(
+                                Icons.location_on,
+                                size: 16,
+                                color: Colors.grey[600],
+                              ),
                               const SizedBox(width: 4),
                               Expanded(
                                 child: Text(
@@ -8063,9 +8205,10 @@ class _AvgResponseTimeModalState extends State<AvgResponseTimeModal> {
           endExclusive = DateTime(now.year, now.month, 1);
           break;
         case 'All Time':
-          final completedReports = scanRequests
-              .where((r) => (r['status'] ?? '').toString() == 'completed')
-              .toList();
+          final completedReports =
+              scanRequests
+                  .where((r) => (r['status'] ?? '').toString() == 'completed')
+                  .toList();
           if (completedReports.isNotEmpty) {
             DateTime? earliestDate;
             DateTime? latestDate;
@@ -8073,7 +8216,8 @@ class _AvgResponseTimeModalState extends State<AvgResponseTimeModal> {
               final createdAtRaw = r['createdAt'];
               DateTime? createdAt;
               if (createdAtRaw is Timestamp) createdAt = createdAtRaw.toDate();
-              if (createdAtRaw is String) createdAt = DateTime.tryParse(createdAtRaw);
+              if (createdAtRaw is String)
+                createdAt = DateTime.tryParse(createdAtRaw);
               if (createdAt != null) {
                 if (earliestDate == null || createdAt.isBefore(earliestDate)) {
                   earliestDate = createdAt;
@@ -8084,8 +8228,16 @@ class _AvgResponseTimeModalState extends State<AvgResponseTimeModal> {
               }
             }
             if (earliestDate != null && latestDate != null) {
-              startInclusive = DateTime(earliestDate.year, earliestDate.month, earliestDate.day);
-              endExclusive = DateTime(latestDate.year, latestDate.month, latestDate.day).add(const Duration(days: 1));
+              startInclusive = DateTime(
+                earliestDate.year,
+                earliestDate.month,
+                earliestDate.day,
+              );
+              endExclusive = DateTime(
+                latestDate.year,
+                latestDate.month,
+                latestDate.day,
+              ).add(const Duration(days: 1));
             } else {
               startInclusive = now.subtract(const Duration(days: 30));
               endExclusive = now;

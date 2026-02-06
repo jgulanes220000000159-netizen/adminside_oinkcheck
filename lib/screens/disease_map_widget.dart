@@ -105,6 +105,8 @@ class _DiseaseMapWidgetState extends State<DiseaseMapWidget>
     'infected_fungal_ringworm',
     'infected_parasitic_mange',
     'infected_viral_foot_and_mouth',
+    'dermatitis',
+    'pityriasis_rosea',
   ];
 
   @override
@@ -136,6 +138,8 @@ class _DiseaseMapWidgetState extends State<DiseaseMapWidget>
             .replaceAll(RegExp(r'\s+'), ' ')
             .trim();
 
+    // Normalize to stable keys so filters and breakdowns match,
+    // even if the stored label has extra words or minor variants.
     switch (normalized) {
       case 'erysipelas':
       case 'bacterial erysipelas':
@@ -161,7 +165,18 @@ class _DiseaseMapWidgetState extends State<DiseaseMapWidget>
       case 'swine pox':
       case 'swinepox':
         return 'swine_pox';
+
+      // Dermatitis — handle labels like "Dermatitis / dermatatis",
+      // "Environmental Dermatitis", etc.
       default:
+        // Match broad patterns for new classes first
+        if (normalized.contains('dermatitis') ||
+            normalized.contains('dermatatis')) {
+          return 'dermatitis';
+        }
+        if (normalized.contains('pityriasis')) {
+          return 'pityriasis_rosea';
+        }
         return normalized.replaceAll(' ', '_');
     }
   }
@@ -182,6 +197,10 @@ class _DiseaseMapWidgetState extends State<DiseaseMapWidget>
         return 'Foot-and-Mouth Disease';
       case 'swine_pox':
         return 'Swine Pox';
+      case 'dermatitis':
+        return 'Dermatitis';
+      case 'pityriasis_rosea':
+        return 'Pityriasis Rosea';
       default:
         return key
             .replaceAll('_', ' ')
