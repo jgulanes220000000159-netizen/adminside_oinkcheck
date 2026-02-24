@@ -1,8 +1,30 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 // import 'package:flutter/foundation.dart';
 import 'dart:async';
+import 'dart:convert';
+import 'package:flutter/services.dart' show rootBundle;
 
 class ScanRequestsService {
+  /// Returns all city/municipality names from Davao del Norte locations JSON.
+  /// Use this for reports and PDF city filters so every LGU is shown even with no data.
+  static Future<List<String>> getDavaoDelNorteCityNames() async {
+    try {
+      final String jsonString = await rootBundle
+          .loadString('assets/davao_del_norte_locations.json');
+      final Map<String, dynamic> map =
+          jsonDecode(jsonString) as Map<String, dynamic>;
+      final List<dynamic> citiesList = map['cities'] as List<dynamic>? ?? [];
+      final List<String> names = citiesList
+          .map((e) => (e as Map<String, dynamic>)['name'] as String? ?? '')
+          .where((s) => s.isNotEmpty)
+          .toList();
+      names.sort();
+      return names;
+    } catch (e) {
+      return [];
+    }
+  }
+
   static final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   // Cache and throttle to avoid repeated reads and rebuilds
   static List<Map<String, dynamic>>? _cachedRequests;
@@ -263,6 +285,12 @@ class ScanRequestsService {
                 lowerName.contains('unknown')) {
               continue;
             }
+            // Exclude dermatitis and pityriasis rosea — do not show anywhere
+            if (lowerName.contains('dermatitis') ||
+                lowerName.contains('dermatatis') ||
+                lowerName.contains('pityriasis')) {
+              continue;
+            }
 
             // Add disease type to set (each report contributes 1 per disease type)
             diseasesInReport.add(diseaseName);
@@ -280,6 +308,17 @@ class ScanRequestsService {
       final List<Map<String, dynamic>> diseaseStats = [];
 
       diseaseCounts.forEach((diseaseName, count) {
+        // Exclude dermatitis and pityriasis rosea — do not show anywhere
+        final n = diseaseName
+            .toLowerCase()
+            .replaceAll(RegExp(r'[_\-]+'), ' ')
+            .replaceAll(RegExp(r'\s+'), ' ')
+            .trim();
+        if (n.contains('dermatitis') ||
+            n.contains('dermatatis') ||
+            n.contains('pityriasis')) {
+          return;
+        }
         final percentage =
             totalDiseaseOccurrences > 0 ? count / totalDiseaseOccurrences : 0.0;
         diseaseStats.add({

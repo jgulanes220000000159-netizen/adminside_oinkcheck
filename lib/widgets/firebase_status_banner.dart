@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import '../services/firebase_monitor.dart';
 import 'dart:html' as html;
 
@@ -45,6 +46,12 @@ class FirebaseStatusBanner extends StatelessWidget {
         message = 'Connection to Firebase lost. Attempting to reconnect...';
         break;
       case FirebaseConnectionStatus.authError:
+        // If a user is actually signed in, treat this as a non-blocking
+        // issue (usually Firestore rules for the health‑check query)
+        // and don't scare the user with an auth banner.
+        if (FirebaseAuth.instance.currentUser != null) {
+          return const SizedBox.shrink();
+        }
         backgroundColor = Colors.red.shade100;
         textColor = Colors.red.shade900;
         icon = Icons.error_outline;

@@ -21,6 +21,19 @@ import 'disease_map_widget.dart';
 
 // picker moved to lib/shared/date_range_picker.dart
 
+/// True if this disease should be hidden everywhere (dermatitis, pityriasis rosea).
+bool _isExcludedDisease(String name) {
+  if (name.isEmpty) return false;
+  final n = name
+      .toLowerCase()
+      .replaceAll(RegExp(r'[_\-]+'), ' ')
+      .replaceAll(RegExp(r'\s+'), ' ')
+      .trim();
+  return n.contains('dermatitis') ||
+      n.contains('dermatatis') ||
+      n.contains('pityriasis');
+}
+
 class Reports extends StatefulWidget {
   final VoidCallback? onGoToUsers;
   const Reports({Key? key, this.onGoToUsers}) : super(key: key);
@@ -260,19 +273,12 @@ class _ReportsState extends State<Reports> {
     }
   }
 
-  // Get available cities from scan requests
+  // Get available cities from Davao del Norte locations (all LGUs shown even with no data)
   Future<List<String>> _getAvailableCities() async {
     try {
-      final scanRequests = await ScanRequestsService.getScanRequests();
-      final cities = <String>{};
-      for (final request in scanRequests) {
-        final city = (request['cityMunicipality'] ?? '').toString().trim();
-        if (city.isNotEmpty) {
-          cities.add(city);
-        }
-      }
-      final sortedCities = cities.toList()..sort();
-      return ['All', ...sortedCities];
+      final cities =
+          await ScanRequestsService.getDavaoDelNorteCityNames();
+      return ['All', ...cities];
     } catch (e) {
       return ['All'];
     }
@@ -364,6 +370,12 @@ class _ReportsState extends State<Reports> {
           if (lowerName.contains('tip burn') || lowerName.contains('unknown')) {
             continue;
           }
+          // Exclude dermatitis and pityriasis rosea — do not show anywhere
+          if (lowerName.contains('dermatitis') ||
+              lowerName.contains('dermatatis') ||
+              lowerName.contains('pityriasis')) {
+            continue;
+          }
 
           // Add disease type to set (each report contributes 1 per disease type)
           diseasesInReport.add(diseaseName);
@@ -386,6 +398,7 @@ class _ReportsState extends State<Reports> {
 
     final List<Map<String, dynamic>> diseaseStats = [];
     diseaseCounts.forEach((diseaseName, count) {
+      if (_isExcludedDisease(diseaseName)) return; // Do not show anywhere
       // Percentage is based on total disease occurrences, not total reports
       // This gives the proportion of each disease among all disease occurrences
       final percentage =
@@ -4361,6 +4374,7 @@ class _ReportsListTableState extends State<ReportsListTable>
   String _searchQuery = '';
   String _selectedCity = 'All'; // City filter
   List<Map<String, dynamic>> _reports = [];
+  List<String> _availableCities = ['All']; // From Davao del Norte JSON (all LGUs)
   bool _loading = true;
   String? _error;
   // Pagination and debounced search
@@ -4372,6 +4386,16 @@ class _ReportsListTableState extends State<ReportsListTable>
   void initState() {
     super.initState();
     _loadReports();
+    _loadAvailableCities();
+  }
+
+  Future<void> _loadAvailableCities() async {
+    try {
+      final cities = await ScanRequestsService.getDavaoDelNorteCityNames();
+      if (mounted) {
+        setState(() => _availableCities = ['All', ...cities]);
+      }
+    } catch (_) {}
   }
 
   Future<void> _loadReports() async {
@@ -4436,19 +4460,6 @@ class _ReportsListTableState extends State<ReportsListTable>
     }
 
     return filtered;
-  }
-
-  // Get unique list of cities from reports
-  List<String> get _availableCities {
-    final cities = <String>{};
-    for (final report in _reports) {
-      final city = (report['cityMunicipality'] ?? '').toString().trim();
-      if (city.isNotEmpty) {
-        cities.add(city);
-      }
-    }
-    final sortedCities = cities.toList()..sort();
-    return ['All', ...sortedCities];
   }
 
   List<Map<String, dynamic>> get _visibleReports {
@@ -5810,19 +5821,18 @@ class _DiseaseDistributionChartState extends State<DiseaseDistributionChart> {
             // Normalize disease name for consistent matching
             // - Replace underscores/hyphens with spaces
             // - Remove extra spaces
-            // - Canonicalize dermatit(is) and pityriasis variants
+            // - Dermatitis and pityriasis rosea are excluded below
             var normalized =
                 lower
                     .replaceAll(RegExp(r'[_\-]+'), ' ')
                     .replaceAll(RegExp(r'\s+'), ' ')
                     .trim();
 
+            // Exclude dermatitis and pityriasis rosea — do not show anywhere
             if (normalized.contains('dermatitis') ||
-                normalized.contains('dermatatis')) {
-              // Canonical label for reporting/legend
-              normalized = 'dermatitis';
-            } else if (normalized.contains('pityriasis')) {
-              normalized = 'pityriasis rosea';
+                normalized.contains('dermatatis') ||
+                normalized.contains('pityriasis')) {
+              continue;
             }
 
             // Add disease type to set (each report contributes 1 per disease type)
@@ -5858,7 +5868,11 @@ class _DiseaseDistributionChartState extends State<DiseaseDistributionChart> {
               .toList()
             ..sort((a, b) => b.value.compareTo(a.value));
       // Show all diseases that appear in the range (no top-20 cutoff)
-      final top = totals.map((e) => e.key).toList();
+      // Exclude dermatitis and pityriasis rosea from display
+      final top = totals
+          .map((e) => e.key)
+          .where((name) => !_isExcludedDisease(name))
+          .toList();
 
       final Map<String, List<double>> series = {};
       for (final name in top) {
@@ -6237,6 +6251,12 @@ class _DiseaseDistributionChartState extends State<DiseaseDistributionChart> {
               normalized == 'tipburn') {
             continue;
           }
+          // Exclude dermatitis and pityriasis rosea — do not show anywhere
+          if (normalized.contains('dermatitis') ||
+              normalized.contains('dermatatis') ||
+              normalized.contains('pityriasis')) {
+            continue;
+          }
           // Add disease type to set (each report contributes 1 per disease type)
           diseasesInReport.add(rawName);
         }
@@ -6256,6 +6276,7 @@ class _DiseaseDistributionChartState extends State<DiseaseDistributionChart> {
     final List<Map<String, dynamic>> result = [];
 
     diseaseToCount.forEach((name, count) {
+      if (_isExcludedDisease(name)) return; // Do not show anywhere
       result.add({
         'name': _getDiseaseDisplayName(name),
         'count': count,
@@ -6407,16 +6428,7 @@ class _DiseaseDistributionChartState extends State<DiseaseDistributionChart> {
       case 'swinepox':
         return const Color(0xFF43A047);
 
-      // Dermatitis — Cyan/Teal (#00ACC1)
-      case 'dermatitis':
-        return const Color(0xFF00ACC1);
-
-      // Pityriasis Rosea — Deep Purple (#5E35B1)
-      // Model/display label: "Pityriasis Rosea"
-      case 'pityriasis rosea':
-        return const Color(0xFF5E35B1);
-
-      // Unknown — Grey (fallback)
+      // Unknown — Grey (fallback; dermatitis/pityriasis rosea excluded)
       case 'unknown':
       case 'tip burn':
       case 'tip_burn':
@@ -9221,17 +9233,10 @@ class _GenerateReportDialogState extends State<GenerateReportDialog> {
 
   Future<void> _loadAvailableCities() async {
     try {
-      final scanRequests = await ScanRequestsService.getScanRequests();
-      final cities = <String>{'All'};
-      for (final request in scanRequests) {
-        final city = (request['cityMunicipality'] ?? '').toString().trim();
-        if (city.isNotEmpty) {
-          cities.add(city);
-        }
-      }
+      final cities = await ScanRequestsService.getDavaoDelNorteCityNames();
       if (mounted) {
         setState(() {
-          _availableCities = cities.toList()..sort();
+          _availableCities = ['All', ...cities];
           _loadingCities = false;
           // If initialCity was provided and exists, use it; otherwise keep 'All'
           if (widget.initialCity != null &&

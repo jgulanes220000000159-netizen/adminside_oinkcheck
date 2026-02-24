@@ -96,7 +96,7 @@ class _DiseaseMapWidgetState extends State<DiseaseMapWidget>
     const LatLng(7.75, 126.05), // NE
   );
 
-  // Disease keys for filtering
+  // Disease keys for filtering (dermatitis and pityriasis_rosea excluded per product)
   final List<String> _diseaseKeys = const [
     'swine_pox',
     'infected_bacterial_erysipelas',
@@ -105,8 +105,6 @@ class _DiseaseMapWidgetState extends State<DiseaseMapWidget>
     'infected_fungal_ringworm',
     'infected_parasitic_mange',
     'infected_viral_foot_and_mouth',
-    'dermatitis',
-    'pityriasis_rosea',
   ];
 
   @override
@@ -197,10 +195,6 @@ class _DiseaseMapWidgetState extends State<DiseaseMapWidget>
         return 'Foot-and-Mouth Disease';
       case 'swine_pox':
         return 'Swine Pox';
-      case 'dermatitis':
-        return 'Dermatitis';
-      case 'pityriasis_rosea':
-        return 'Pityriasis Rosea';
       default:
         return key
             .replaceAll('_', ' ')
@@ -215,6 +209,16 @@ class _DiseaseMapWidgetState extends State<DiseaseMapWidget>
   }
 
   Future<void> _loadDiseaseLocations() async {
+    // When no disease selected, show empty map — user must select a disease first
+    if (_selectedDisease == null) {
+      setState(() {
+        _markers = [];
+        _heatmapCircles = [];
+        _isLoading = false;
+      });
+      return;
+    }
+
     // Clear markers and heatmap circles immediately to avoid showing stale data
     setState(() {
       _markers = [];
@@ -293,6 +297,10 @@ class _DiseaseMapWidgetState extends State<DiseaseMapWidget>
             }
           }
         }
+        // Exclude dermatitis and pityriasis rosea — do not show anywhere
+        diseaseKeysInReport.remove('dermatitis');
+        diseaseKeysInReport.remove('pityriasis_rosea');
+        if (diseaseKeysInReport.isEmpty) continue;
 
         // If a specific disease is selected, ONLY process reports that contain it
         if (_selectedDisease != null) {
@@ -778,22 +786,19 @@ class _DiseaseMapWidgetState extends State<DiseaseMapWidget>
                         fillColor: Colors.white,
                         isDense: true,
                       ),
-                      hint: const Text('All', style: TextStyle(fontSize: 12)),
-                      items: [
-                        const DropdownMenuItem<String>(
-                          value: null,
-                          child: Text('All', style: TextStyle(fontSize: 12)),
-                        ),
-                        ..._diseaseKeys.map((key) {
-                          return DropdownMenuItem<String>(
-                            value: key,
-                            child: Text(
-                              _getDiseaseDisplayName(key),
-                              style: const TextStyle(fontSize: 12),
-                            ),
-                          );
-                        }).toList(),
-                      ],
+                      hint: const Text(
+                        'Select disease',
+                        style: TextStyle(fontSize: 12),
+                      ),
+                      items: _diseaseKeys.map((key) {
+                        return DropdownMenuItem<String>(
+                          value: key,
+                          child: Text(
+                            _getDiseaseDisplayName(key),
+                            style: const TextStyle(fontSize: 12),
+                          ),
+                        );
+                      }).toList(),
                       onChanged: (value) {
                         if (_selectedDisease != value) {
                           setState(() {

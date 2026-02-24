@@ -13,7 +13,6 @@ import '../services/scan_requests_service.dart';
 import 'package:provider/provider.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'settings.dart' as admin_settings;
-import 'admin_login.dart';
 import '../widgets/firebase_status_banner.dart';
 
 // --- Custom snapshot wrappers ---
@@ -366,6 +365,11 @@ class _AdminDashboardState extends State<AdminDashboard>
   }
 
   void _showRatingsReviewsModal(BuildContext context) {
+    final screenWidth = MediaQuery.of(context).size.width;
+    final screenHeight = MediaQuery.of(context).size.height;
+    final width = screenWidth > 900
+        ? 880.0
+        : (screenWidth * 0.92).clamp(320.0, double.infinity);
     showDialog(
       context: context,
       builder:
@@ -374,8 +378,8 @@ class _AdminDashboardState extends State<AdminDashboard>
               borderRadius: BorderRadius.circular(20),
             ),
             child: Container(
-              width: MediaQuery.of(context).size.width * 0.9,
-              height: MediaQuery.of(context).size.height * 0.85,
+              width: width,
+              height: screenHeight * 0.85,
               padding: const EdgeInsets.all(24),
               child: const RatingsReviewsModalContent(),
             ),
@@ -981,11 +985,8 @@ class _AdminDashboardState extends State<AdminDashboard>
 
                                     await FirebaseAuth.instance.signOut();
                                     if (context.mounted) {
-                                      Navigator.of(context).pushAndRemoveUntil(
-                                        MaterialPageRoute(
-                                          builder:
-                                              (context) => const AdminLogin(),
-                                        ),
+                                      Navigator.of(context).pushNamedAndRemoveUntil(
+                                        '/',
                                         (route) => false,
                                       );
                                     }

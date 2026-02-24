@@ -158,6 +158,9 @@ class _SettingsState extends State<Settings> {
       },
     );
     if (newName != null && newName.isNotEmpty) {
+      // Ensure the widget is still mounted after the async gap above
+      if (!mounted) return;
+
       setState(() => _adminName = newName);
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(

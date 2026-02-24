@@ -7,6 +7,18 @@ import 'scan_requests_service.dart';
 // import 'settings_service.dart';
 // import 'weather_service.dart'; // Commented out - weather summary removed for now
 
+bool _isExcludedDiseasePdf(String name) {
+  if (name.isEmpty) return false;
+  final n = name
+      .toLowerCase()
+      .replaceAll(RegExp(r'[_\-]+'), ' ')
+      .replaceAll(RegExp(r'\s+'), ' ')
+      .trim();
+  return n.contains('dermatitis') ||
+      n.contains('dermatatis') ||
+      n.contains('pityriasis');
+}
+
 class ReportPdfService {
   static Future<void> generateAndShareReport({
     required BuildContext context,
@@ -220,6 +232,8 @@ class ReportPdfService {
                   .replaceAll(RegExp(r'\s+'), ' ')
                   .trim();
 
+          if (_isExcludedDiseasePdf(normalized)) continue;
+
           // Add disease type to set (each report contributes 1 per disease type)
           diseasesInReport.add(normalized);
         }
@@ -293,6 +307,7 @@ class ReportPdfService {
     );
 
     diseaseCounts.forEach((name, count) {
+      if (_isExcludedDiseasePdf(name)) return;
       // Percentage is based on total disease occurrences, not total reports
       // This gives the proportion of each disease among all disease occurrences
       final pct =
@@ -375,6 +390,8 @@ class ReportPdfService {
                   .replaceAll(RegExp(r'[_\-]+'), ' ')
                   .replaceAll(RegExp(r'\s+'), ' ')
                   .trim();
+
+          if (_isExcludedDiseasePdf(normalized)) continue;
 
           // Add disease type to set (each report contributes 1 per disease type)
           diseasesInReport.add(normalized);
@@ -518,7 +535,8 @@ class ReportPdfService {
             (e) =>
                 e.key == 'healthy' ||
                 e.key.contains('tip burn') ||
-                e.key.contains('unknown'),
+                e.key.contains('unknown') ||
+                _isExcludedDiseasePdf(e.key),
           )
           ..sort((a, b) => b.value.compareTo(a.value));
     // Show all diseases (or at least up to 10 to avoid overcrowding)
@@ -705,37 +723,32 @@ class ReportPdfService {
                   mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                   crossAxisAlignment: pw.CrossAxisAlignment.start,
                   children: [
-                    // Left side - Prepared By
+                    // Left side - Prepared By (admin name, no title)
                     pw.Expanded(
                       child: pw.Column(
                         crossAxisAlignment: pw.CrossAxisAlignment.start,
                         children: [
                           pw.Text(
-                            'Prepared By: _________________',
+                            'Prepared By: ${utilityName.isEmpty ? '_________________' : utilityName}',
                             style: tsBody,
-                          ),
-                          pw.SizedBox(height: 4),
-                          pw.Text(
-                            'Agricultural Technologist',
-                            style: tsCaption,
                           ),
                         ],
                       ),
                     ),
                     pw.SizedBox(width: 20),
-                    // Right side - Certified Correct By
+                    // Right side - Certified Correct By (fixed name, Provincial Veterinary)
                     pw.Expanded(
                       child: pw.Column(
                         crossAxisAlignment: pw.CrossAxisAlignment.end,
                         children: [
                           pw.Text(
-                            'Certified Correct By: ${utilityName.isEmpty ? 'Admin name' : utilityName}',
+                            'Certified Correct By: DR. DENNIS A. SUMAOY',
                             style: tsBody,
                             textAlign: pw.TextAlign.right,
                           ),
                           pw.SizedBox(height: 4),
                           pw.Text(
-                            'Municipal Agriculturist',
+                            'Provincial Veterinary',
                             style: tsCaption,
                             textAlign: pw.TextAlign.right,
                           ),
@@ -1536,15 +1549,7 @@ class ReportPdfService {
       case 'swinepox':
         return pdf.PdfColor(0x43 / 255, 0xA0 / 255, 0x47 / 255);
 
-      // Dermatitis — Cyan/Teal (#00ACC1)
-      case 'dermatitis':
-        return pdf.PdfColor(0x00 / 255, 0xAC / 255, 0xC1 / 255);
-
-      // Pityriasis Rosea — Deep Purple (#5E35B1)
-      case 'pityriasis rosea':
-        return pdf.PdfColor(0x5E / 255, 0x35 / 255, 0xB1 / 255);
-
-      // Unknown — Grey (fallback)
+      // Unknown — Grey (fallback; dermatitis/pityriasis rosea excluded)
       case 'unknown':
       case 'tip burn':
       case 'tip_burn':

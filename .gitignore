@@ -46,3 +46,6 @@ app.*.map.json
 
 # Firebase configuration (contains sensitive API keys)
 lib/firebase_options.dart
+
+# Mobile app code (not part of admin web)
+lib/lib_from_mobile_app/

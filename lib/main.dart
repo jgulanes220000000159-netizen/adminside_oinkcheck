@@ -8,6 +8,7 @@ import 'firebase_options.dart';
 import 'screens/admin_login.dart';
 import 'screens/admin_setup.dart';
 import 'screens/admin_dashboard.dart';
+import 'screens/landing_page.dart';
 import 'models/admin_user.dart';
 import 'services/firebase_monitor.dart';
 
@@ -63,16 +64,29 @@ class MyApp extends StatelessWidget {
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
       ),
       routes: {
-        '/login': (context) => const AdminLogin(),
+        '/': (context) => const AuthWrapper(),
+        '/login': (context) => AdminLogin(
+          onBackToLanding: () => Navigator.of(context).pushNamedAndRemoveUntil(
+            '/',
+            (route) => false,
+          ),
+        ),
         '/setup': (context) => const AdminSetup(),
       },
-      home: const AuthWrapper(),
+      initialRoute: '/',
     );
   }
 }
 
-class AuthWrapper extends StatelessWidget {
+class AuthWrapper extends StatefulWidget {
   const AuthWrapper({super.key});
+
+  @override
+  State<AuthWrapper> createState() => _AuthWrapperState();
+}
+
+class _AuthWrapperState extends State<AuthWrapper> {
+  bool _showLoginFlow = false;
 
   @override
   Widget build(BuildContext context) {
@@ -121,7 +135,14 @@ class AuthWrapper extends StatelessWidget {
           );
         }
 
-        // User is not signed in, check if any admins exist
+        // User is not signed in: show landing first, then login/setup when they tap Login
+        if (!_showLoginFlow) {
+          return LandingPage(
+            onLoginPressed: () => setState(() => _showLoginFlow = true),
+          );
+        }
+
+        // User tapped Login on landing — check if any admins exist
         return FutureBuilder<QuerySnapshot>(
           future: FirebaseFirestore.instance
               .collection('admins')
@@ -135,14 +156,14 @@ class AuthWrapper extends StatelessWidget {
               );
             }
 
-            // If no admins exist, show setup screen
             if (adminCheckSnapshot.hasData &&
                 adminCheckSnapshot.data!.docs.isEmpty) {
               return const AdminSetup();
             }
 
-            // Otherwise show login screen
-            return const AdminLogin();
+            return AdminLogin(
+              onBackToLanding: () => setState(() => _showLoginFlow = false),
+            );
           },
         );
       },

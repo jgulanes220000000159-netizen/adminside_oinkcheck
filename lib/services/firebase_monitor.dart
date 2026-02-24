@@ -108,10 +108,22 @@ class FirebaseMonitor {
     FirebaseConnectionStatus newStatus;
 
     if (errorCode == 'timeout' || errorCode == 'unavailable') {
+      // Network slowness / temporary outage
       newStatus = FirebaseConnectionStatus.slow;
     } else if (errorCode == 'permission-denied' ||
         errorCode == 'unauthenticated') {
-      newStatus = FirebaseConnectionStatus.authError;
+      // If there is NO signed‑in user, then this really is an auth error
+      if (FirebaseAuth.instance.currentUser == null) {
+        newStatus = FirebaseConnectionStatus.authError;
+      } else {
+        // User is signed in but does not have permission for this specific
+        // health‑check query (e.g. Firestore rules block the `admins` query).
+        // In that case, don't scare the user with an auth banner – treat it
+        // as "connected" for the purposes of the status bar.
+        _consecutiveFailures = 0;
+        _lastSuccessfulCheck ??= DateTime.now();
+        newStatus = FirebaseConnectionStatus.connected;
+      }
     } else if (_consecutiveFailures >= 3) {
       newStatus = FirebaseConnectionStatus.disconnected;
     } else {

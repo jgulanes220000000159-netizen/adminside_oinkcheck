@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import '../services/scan_requests_service.dart';
 
 class RatingsReviewsModalContent extends StatefulWidget {
   const RatingsReviewsModalContent({Key? key}) : super(key: key);
@@ -109,13 +110,59 @@ class _RatingsReviewsModalContentState extends State<RatingsReviewsModalContent>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 3, vsync: this);
+    _tabController = TabController(length: 4, vsync: this);
     _selectedRatingFilter = null; // Show all by default
     _tabController.addListener(() {
       if (_tabController.indexIsChanging) {
         setState(() {}); // Update when tab changes to reflect icon color
       }
     });
+  }
+
+  /// Normalize disease label for comparison (match reports/disease map logic).
+  static String _normalizeDiseaseLabel(String raw) {
+    final s =
+        raw
+            .toLowerCase()
+            .replaceAll(RegExp(r'[_\-]+'), ' ')
+            .replaceAll(RegExp(r'\s+'), ' ')
+            .trim();
+    if (s.isEmpty || s == 'unknown' || s.contains('tip burn')) return '';
+    if (s.contains('dermatitis') ||
+        s.contains('dermatatis') ||
+        s.contains('pityriasis'))
+      return '';
+    return s.replaceAll(' ', '_');
+  }
+
+  /// Extract set of normalized disease keys from a disease summary list.
+  static Set<String> _diseaseSetFromSummary(List<dynamic> summary) {
+    final set = <String>{};
+    if (summary.isEmpty) return set;
+    for (final e in summary) {
+      String label = '';
+      if (e is Map<String, dynamic>) {
+        label =
+            (e['label'] ?? e['disease'] ?? e['name'] ?? '').toString().trim();
+      } else if (e is String) {
+        label = e.trim();
+      }
+      final key = _normalizeDiseaseLabel(label);
+      if (key.isNotEmpty) set.add(key);
+    }
+    return set;
+  }
+
+  /// True if expert agreed with farmer (same disease set). Else expert corrected.
+  static bool _isCorrectDetection(Map<String, dynamic> request) {
+    final expert = request['expertDiseaseSummary'];
+    final farmer = request['diseaseSummary'];
+    if (expert == null || expert is! List || expert.isEmpty) return false;
+    final farmerList = farmer is List ? farmer : <dynamic>[];
+    final expertSet = _diseaseSetFromSummary(expert);
+    final farmerSet = _diseaseSetFromSummary(farmerList);
+    return expertSet.length == farmerSet.length &&
+        expertSet.containsAll(farmerSet);
   }
 
   @override
@@ -185,48 +232,88 @@ class _RatingsReviewsModalContentState extends State<RatingsReviewsModalContent>
             tabs: [
               Tab(
                 child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 10,
+                  ),
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.center,
+                    mainAxisSize: MainAxisSize.min,
                     children: [
-                      // Custom icon using Image.asset - you can replace 'assets/logo.png' with your farmer icon
                       Image.asset(
-                        'assets/farmer.png', // Replace with your custom farmer icon path
-                        width: 20,
-                        height: 20,
+                        'assets/farmer.png',
+                        width: 18,
+                        height: 18,
                         color:
                             _tabController.index == 0
                                 ? Colors.white
                                 : Colors.grey[700],
                       ),
-                      const SizedBox(width: 8),
-                      const Text('Farmers'),
+                      const SizedBox(width: 6),
+                      const FittedBox(
+                        fit: BoxFit.scaleDown,
+                        child: Text('Farmers'),
+                      ),
                     ],
                   ),
                 ),
               ),
               Tab(
                 child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 10,
+                  ),
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.center,
+                    mainAxisSize: MainAxisSize.min,
                     children: const [
-                      Icon(Icons.medical_services, size: 20),
-                      SizedBox(width: 8),
-                      Text('Experts & Head Vets'),
+                      Icon(Icons.medical_services, size: 18),
+                      SizedBox(width: 6),
+                      FittedBox(
+                        fit: BoxFit.scaleDown,
+                        child: Text('Veterinarians'),
+                      ),
                     ],
                   ),
                 ),
               ),
               Tab(
                 child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 10,
+                  ),
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.center,
+                    mainAxisSize: MainAxisSize.min,
                     children: const [
-                      Icon(Icons.smart_toy, size: 20),
-                      SizedBox(width: 8),
-                      Text('ML Experts'),
+                      Icon(Icons.smart_toy, size: 18),
+                      SizedBox(width: 6),
+                      FittedBox(
+                        fit: BoxFit.scaleDown,
+                        child: Text('ML Experts'),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              Tab(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 10,
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    mainAxisSize: MainAxisSize.min,
+                    children: const [
+                      Icon(Icons.fact_check, size: 18),
+                      SizedBox(width: 6),
+                      FittedBox(
+                        fit: BoxFit.scaleDown,
+                        child: Text('Disease Accuracy'),
+                      ),
                     ],
                   ),
                 ),
@@ -235,35 +322,36 @@ class _RatingsReviewsModalContentState extends State<RatingsReviewsModalContent>
           ),
         ),
         const SizedBox(height: 16),
-        // Rating Filter
-        Row(
-          children: [
-            const Text(
-              'Filter by Rating:',
-              style: TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.w600,
-                color: Colors.black87,
+        // Rating Filter (hidden on Disease Accuracy tab)
+        if (_tabController.index != 3)
+          Row(
+            children: [
+              const Text(
+                'Filter by Rating:',
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.black87,
+                ),
               ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: [
-                  _buildRatingFilterChip(null, 'All'),
-                  _buildRatingFilterChip(5, '5 ⭐'),
-                  _buildRatingFilterChip(4, '4 ⭐'),
-                  _buildRatingFilterChip(3, '3 ⭐'),
-                  _buildRatingFilterChip(2, '2 ⭐'),
-                  _buildRatingFilterChip(1, '1 ⭐'),
-                ],
+              const SizedBox(width: 12),
+              Expanded(
+                child: Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    _buildRatingFilterChip(null, 'All'),
+                    _buildRatingFilterChip(5, '5 ⭐'),
+                    _buildRatingFilterChip(4, '4 ⭐'),
+                    _buildRatingFilterChip(3, '3 ⭐'),
+                    _buildRatingFilterChip(2, '2 ⭐'),
+                    _buildRatingFilterChip(1, '1 ⭐'),
+                  ],
+                ),
               ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 16),
+            ],
+          ),
+        if (_tabController.index != 3) const SizedBox(height: 16),
         // Content
         Expanded(
           child: TabBarView(
@@ -272,6 +360,7 @@ class _RatingsReviewsModalContentState extends State<RatingsReviewsModalContent>
               _buildFarmersRatings(),
               _buildExpertsRatings(),
               _buildMLExpertsRatings(),
+              _buildDiseaseAccuracyTab(),
             ],
           ),
         ),
@@ -592,7 +681,8 @@ class _RatingsReviewsModalContentState extends State<RatingsReviewsModalContent>
         final headDocs =
             ratings.where((doc) {
               final data = doc.data() as Map<String, dynamic>;
-              return (data['userRole']?.toString() ?? '') == 'head_veterinarian';
+              return (data['userRole']?.toString() ?? '') ==
+                  'head_veterinarian';
             }).toList();
         final expertAvg = _calcAverageFromDocs(expertDocs);
         final headAvg = _calcAverageFromDocs(headDocs);
@@ -809,6 +899,245 @@ class _RatingsReviewsModalContentState extends State<RatingsReviewsModalContent>
               ),
             ),
           ],
+        );
+      },
+    );
+  }
+
+  Widget _buildDiseaseAccuracyTab() {
+    return FutureBuilder<List<Map<String, dynamic>>>(
+      future: ScanRequestsService.getScanRequests(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        if (snapshot.hasError) {
+          return Center(child: Text('Error: ${snapshot.error}'));
+        }
+        final all = snapshot.data ?? [];
+        final completed =
+            all.where((r) {
+              if ((r['status'] ?? '').toString() != 'completed') return false;
+              final expert = r['expertDiseaseSummary'];
+              return expert != null && expert is List && expert.isNotEmpty;
+            }).toList();
+
+        int correctDetection = 0;
+        int expertVerification = 0;
+        for (final r in completed) {
+          if (_isCorrectDetection(r)) {
+            correctDetection++;
+          } else {
+            expertVerification++;
+          }
+        }
+
+        final total = completed.length;
+        final correctPct = total > 0 ? (correctDetection / total) * 100 : 0.0;
+        final expertPct = total > 0 ? (expertVerification / total) * 100 : 0.0;
+
+        if (total == 0) {
+          return Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(
+                  Icons.fact_check_outlined,
+                  size: 64,
+                  color: Colors.grey[400],
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  'No completed reviews yet',
+                  style: TextStyle(fontSize: 18, color: Colors.grey[600]),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Disease accuracy is based on expert-validated scans.',
+                  style: TextStyle(fontSize: 13, color: Colors.grey[500]),
+                  textAlign: TextAlign.center,
+                ),
+              ],
+            ),
+          );
+        }
+
+        return SingleChildScrollView(
+          padding: const EdgeInsets.only(bottom: 24),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const SizedBox(height: 8),
+              Text(
+                'Scans submitted by farmers are reviewed by experts. Counts below are for completed reviews only.',
+                style: TextStyle(fontSize: 12, color: Colors.grey[700]),
+              ),
+              const SizedBox(height: 16),
+              // Summary card
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.grey[50],
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Colors.grey[200]!),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(
+                          Icons.assignment_turned_in,
+                          color: Colors.grey[700],
+                          size: 20,
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          'Total completed reviews',
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.grey[800],
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      '$total',
+                      style: const TextStyle(
+                        fontSize: 28,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.black87,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 12),
+              // Correct detection
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF2D7204).withOpacity(0.08),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: const Color(0xFF2D7204).withOpacity(0.3),
+                  ),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(
+                          Icons.check_circle_outline,
+                          color: const Color(0xFF2D7204),
+                          size: 22,
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          'Correct detection',
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.grey[800],
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Expert agreed with farmer/model',
+                      style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          '$correctDetection',
+                          style: const TextStyle(
+                            fontSize: 24,
+                            fontWeight: FontWeight.bold,
+                            color: Color(0xFF2D7204),
+                          ),
+                        ),
+                        Text(
+                          '${correctPct.toStringAsFixed(1)}%',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.grey[700],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 12),
+              // Expert verification
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.orange.shade50,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Colors.orange.shade200),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(
+                          Icons.verified_outlined,
+                          color: Colors.orange.shade700,
+                          size: 22,
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          'Expert verification',
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.grey[800],
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Expert corrected or changed the result',
+                      style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          '$expertVerification',
+                          style: TextStyle(
+                            fontSize: 24,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.orange.shade800,
+                          ),
+                        ),
+                        Text(
+                          '${expertPct.toStringAsFixed(1)}%',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.grey[700],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
         );
       },
     );

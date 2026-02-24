@@ -7,7 +7,8 @@ import 'package:firebase_core/firebase_core.dart';
 import '../firebase_options.dart';
 
 class AdminLogin extends StatefulWidget {
-  const AdminLogin({Key? key}) : super(key: key);
+  const AdminLogin({Key? key, this.onBackToLanding}) : super(key: key);
+  final VoidCallback? onBackToLanding;
 
   @override
   State<AdminLogin> createState() => _AdminLoginState();
@@ -535,6 +536,36 @@ class _AdminLoginState extends State<AdminLogin> {
                                       ),
                             ),
                           ),
+                          // Back to Landing Page
+                          if (widget.onBackToLanding != null) ...[
+                            SizedBox(height: is1366x768 ? 6 : 12),
+                            SizedBox(
+                              width: double.infinity,
+                              height: buttonHeight,
+                              child: OutlinedButton.icon(
+                                onPressed: widget.onBackToLanding,
+                                icon: Icon(
+                                  Icons.arrow_back_rounded,
+                                  size: subtitleFontSize,
+                                  color: const Color.fromARGB(255, 42, 157, 50),
+                                ),
+                                label: Text(
+                                  'Back to Landing Page',
+                                  style: TextStyle(
+                                    color: const Color.fromARGB(255, 42, 157, 50),
+                                    fontSize: subtitleFontSize * 0.9,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                                style: OutlinedButton.styleFrom(
+                                  side: const BorderSide(color: Color.fromARGB(255, 42, 157, 50)),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(5),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
                         ],
                       ),
                     ),
