@@ -829,6 +829,144 @@ class _UserManagementState extends State<UserManagement> {
     );
   }
 
+  Future<void> _confirmAndDeleteUser(Map<String, dynamic> user) async {
+    final String userId = (user['id'] ?? '').toString();
+    final String userName = (user['name'] ?? 'User').toString();
+    final String userRole = (user['role'] ?? '').toString().toLowerCase();
+    final bool canDelete =
+        userRole == 'expert' ||
+        userRole == 'machine_learning_expert' ||
+        userRole == 'head_veterinarian';
+
+    if (!canDelete || userId.isEmpty) {
+      return;
+    }
+
+    final bool? confirm = await showDialog<bool>(
+      context: context,
+      builder:
+          (ctx) => AlertDialog(
+            title: const Text('Delete User Account'),
+            content: Text(
+              'Are you sure you want to delete $userName? This action cannot be undone.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(ctx).pop(false),
+                child: const Text('Cancel'),
+              ),
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+                onPressed: () => Navigator.of(ctx).pop(true),
+                child: const Text(
+                  'Delete',
+                  style: TextStyle(color: Colors.white),
+                ),
+              ),
+            ],
+          ),
+    );
+
+    if (confirm != true) return;
+
+    final dialogContext = context;
+    showDialog(
+      context: dialogContext,
+      barrierDismissible: false,
+      builder: (ctx) => _buildLoadingDialog('Deleting account...'),
+    );
+
+    try {
+      final success = await UserStore.deleteUser(userId);
+
+      if (Navigator.canPop(dialogContext)) {
+        Navigator.of(dialogContext).pop();
+      }
+
+      if (success) {
+        cf.FirebaseFirestore.instance.collection('activities').add({
+          'action': 'Deleted user account',
+          'user': userName,
+          'type': 'delete',
+          'color': Colors.red.value,
+          'icon': Icons.delete.codePoint,
+          'timestamp': cf.FieldValue.serverTimestamp(),
+        });
+
+        if (mounted) {
+          await showDialog(
+            context: dialogContext,
+            builder:
+                (ctx) => AlertDialog(
+                  title: const Text('Deleted'),
+                  content: Text('$userName has been deleted successfully.'),
+                  actions: [
+                    ElevatedButton(
+                      onPressed: () => Navigator.of(ctx).pop(),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.green,
+                        foregroundColor: Colors.white,
+                      ),
+                      child: const Text('OK'),
+                    ),
+                  ],
+                ),
+          );
+        }
+
+        _loadUsers();
+      } else {
+        if (mounted) {
+          showDialog(
+            context: dialogContext,
+            builder:
+                (ctx) => AlertDialog(
+                  title: const Text('Delete Failed'),
+                  content: const Text(
+                    'Could not fully delete this account. Please try again.',
+                  ),
+                  actions: [
+                    ElevatedButton(
+                      onPressed: () => Navigator.of(ctx).pop(),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.red,
+                        foregroundColor: Colors.white,
+                      ),
+                      child: const Text('OK'),
+                    ),
+                  ],
+                ),
+          );
+        }
+      }
+    } catch (e) {
+      if (Navigator.canPop(dialogContext)) {
+        Navigator.of(dialogContext).pop();
+      }
+
+      if (mounted) {
+        showDialog(
+          context: dialogContext,
+          builder:
+              (ctx) => AlertDialog(
+                title: const Text('Error'),
+                content: Text('Error deleting user: $e'),
+                actions: [
+                  ElevatedButton(
+                    onPressed: () => Navigator.of(ctx).pop(),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.red,
+                      foregroundColor: Colors.white,
+                    ),
+                    child: const Text('OK'),
+                  ),
+                ],
+              ),
+        );
+      }
+    }
+  }
+
   @override
   void dispose() {
     _searchController.dispose();
@@ -1110,6 +1248,20 @@ class _UserManagementState extends State<UserManagement> {
                                                             onPressed:
                                                                 () =>
                                                                     _showEditDialog(
+                                                                      user,
+                                                                    ),
+                                                          ),
+                                                        if (isExpert)
+                                                          IconButton(
+                                                            icon: const Icon(
+                                                              Icons.delete,
+                                                              color: Colors.red,
+                                                            ),
+                                                            tooltip:
+                                                                'Delete User',
+                                                            onPressed:
+                                                                () =>
+                                                                    _confirmAndDeleteUser(
                                                                       user,
                                                                     ),
                                                           ),

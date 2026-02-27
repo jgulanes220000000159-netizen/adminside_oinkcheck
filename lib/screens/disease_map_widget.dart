@@ -431,10 +431,11 @@ class _DiseaseMapWidgetState extends State<DiseaseMapWidget>
       final heatmapCircles = <CircleMarker>[];
       final markers = <Marker>[]; // Keep markers for click interaction
 
-      // Fixed absolute thresholds
-      const int lowThreshold = 24; // Low: 0-24 cases
-      const int mediumThreshold = 49; // Medium: 25-49 cases
-      // High: 50+ cases
+      // Percentage thresholds based on completed scans.
+      const double lowThresholdPct = 10.0; // Low: <=10%
+      const double mediumThresholdPct = 30.0; // Medium: 11-30%
+      // High: >=31%
+      final int totalCompletedScans = completed.length;
 
       for (final a in agg.values) {
         // Must have coordinates
@@ -460,44 +461,55 @@ class _DiseaseMapWidgetState extends State<DiseaseMapWidget>
         }
 
         final count = a.count;
+        final double percentageOfCompleted =
+            totalCompletedScans <= 0
+                ? 0.0
+                : (count / totalCompletedScans) * 100.0;
 
-        // Calculate intensity based on fixed thresholds (for color gradient)
+        // Calculate intensity based on percentage thresholds (for color gradient)
         double intensity; // 0.0 to 1.0 for color gradient
 
-        if (count <= lowThreshold) {
-          // Low: 0-24 cases
-          // Normalize within low range: 0 cases = 0.0, 24 cases = 0.33
-          intensity = (count / lowThreshold) * 0.33;
-        } else if (count <= mediumThreshold) {
-          // Medium: 25-49 cases
-          // Normalize within medium range: 25 cases = 0.33, 49 cases = 0.67
+        if (percentageOfCompleted <= lowThresholdPct) {
+          // Low: 0-10%
+          // Normalize within low range: 0% = 0.0, 10% = 0.33
+          intensity = (percentageOfCompleted / lowThresholdPct) * 0.33;
+        } else if (percentageOfCompleted <= mediumThresholdPct) {
+          // Medium: 11-30%
+          // Normalize within medium range: 10% = 0.33, 30% = 0.67
           intensity =
               0.33 +
-              ((count - lowThreshold) / (mediumThreshold - lowThreshold)) *
+              ((percentageOfCompleted - lowThresholdPct) /
+                      (mediumThresholdPct - lowThresholdPct)) *
                   0.34;
         } else {
-          // High: 50+ cases
-          // Normalize within high range: 50 cases = 0.67, scale up for higher counts
-          final excess = count - mediumThreshold;
-          // Scale: 50 cases = 0.67, 100+ cases = 1.0
-          intensity = 0.67 + (math.min(excess / 50.0, 1.0) * 0.33);
+          // High: 31%+
+          // Normalize within high range: 30% = 0.67, 100% = 1.0
+          final highSpan = 100.0 - mediumThresholdPct;
+          intensity =
+              0.67 +
+              (math.min((percentageOfCompleted - mediumThresholdPct) / highSpan, 1.0) *
+                  0.33);
         }
 
-        // Calculate circle size based on count category (reduced for more compact display)
+        // Calculate circle size based on percentage category
         double radius;
-        if (count <= lowThreshold) {
+        if (percentageOfCompleted <= lowThresholdPct) {
           // Low: 500m to 1.5km
-          radius = 500.0 + ((count / lowThreshold) * 1000.0);
-        } else if (count <= mediumThreshold) {
+          radius = 500.0 + ((percentageOfCompleted / lowThresholdPct) * 1000.0);
+        } else if (percentageOfCompleted <= mediumThresholdPct) {
           // Medium: 1.5km to 3km
           radius =
               1500.0 +
-              (((count - lowThreshold) / (mediumThreshold - lowThreshold)) *
+              (((percentageOfCompleted - lowThresholdPct) /
+                      (mediumThresholdPct - lowThresholdPct)) *
                   1500.0);
         } else {
           // High: 3km to 5km (capped)
-          final excess = count - mediumThreshold;
-          radius = 3000.0 + (math.min(excess / 100.0, 1.0) * 2000.0);
+          final highSpan = 100.0 - mediumThresholdPct;
+          radius =
+              3000.0 +
+              (math.min((percentageOfCompleted - mediumThresholdPct) / highSpan, 1.0) *
+                  2000.0);
         }
 
         // Get heatmap color based on intensity
@@ -570,6 +582,7 @@ class _DiseaseMapWidgetState extends State<DiseaseMapWidget>
                   _showMarkerInfo(
                     'All Diseases',
                     count,
+                    percentageOfCompleted: percentageOfCompleted,
                     city: a.city,
                     province: a.province,
                     diseaseBreakdown: diseaseList,
@@ -578,6 +591,7 @@ class _DiseaseMapWidgetState extends State<DiseaseMapWidget>
                   _showMarkerInfo(
                     a.diseaseKey,
                     count,
+                    percentageOfCompleted: percentageOfCompleted,
                     city: a.city,
                     province: a.province,
                   );
@@ -618,6 +632,7 @@ class _DiseaseMapWidgetState extends State<DiseaseMapWidget>
   void _showMarkerInfo(
     String diseaseKey,
     int count, {
+    required double percentageOfCompleted,
     required String city,
     required String province,
     String? diseaseBreakdown,
@@ -634,8 +649,8 @@ class _DiseaseMapWidgetState extends State<DiseaseMapWidget>
             content: SingleChildScrollView(
               child: Text(
                 diseaseBreakdown != null
-                    ? 'Location: $city, $province\nTotal Cases: $count\nIntensity: ${_getIntensityLabelFromCount(count)}\n\nDisease Breakdown:\n$diseaseBreakdown'
-                    : 'Location: $city, $province\nCases: $count\nIntensity: ${_getIntensityLabelFromCount(count)}',
+                    ? 'Location: $city, $province\nTotal Cases: $count\nCompleted Scan Share: ${percentageOfCompleted.toStringAsFixed(1)}%\nIntensity: ${_getIntensityLabelFromPercentage(percentageOfCompleted)}\n\nDisease Breakdown:\n$diseaseBreakdown'
+                    : 'Location: $city, $province\nCases: $count\nCompleted Scan Share: ${percentageOfCompleted.toStringAsFixed(1)}%\nIntensity: ${_getIntensityLabelFromPercentage(percentageOfCompleted)}',
                 style: const TextStyle(fontSize: 16),
               ),
             ),
@@ -708,11 +723,11 @@ class _DiseaseMapWidgetState extends State<DiseaseMapWidget>
     }
   }
 
-  /// Get intensity category label based on actual count
-  /// Uses fixed absolute thresholds
-  String _getIntensityLabelFromCount(int count) {
-    if (count <= 24) return 'Low';
-    if (count <= 49) return 'Medium';
+  /// Get intensity category label based on percentage of completed scans
+  /// Thresholds: Low <=10%, Medium 11-30%, High >=31%
+  String _getIntensityLabelFromPercentage(double percentage) {
+    if (percentage <= 10.0) return 'Low';
+    if (percentage <= 30.0) return 'Medium';
     return 'High';
   }
 
@@ -749,7 +764,7 @@ class _DiseaseMapWidgetState extends State<DiseaseMapWidget>
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      'Thresholds: Low (0-24 cases) | Medium (25-49 cases) | High (50+ cases)',
+                      'Thresholds: Low (<=10%) | Medium (11-30%) | High (>=31%)',
                       style: TextStyle(color: Colors.grey[700], fontSize: 11),
                     ),
                   ],

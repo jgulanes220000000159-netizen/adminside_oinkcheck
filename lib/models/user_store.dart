@@ -141,19 +141,9 @@ class UserStore {
       return data['success'] == true;
     } catch (e) {
       print('Error deleting user: $e');
-
-      // Fallback: if Cloud Function fails, try direct Firestore delete
-      // (This won't delete Auth account but at least removes from Firestore)
-      try {
-        print('Attempting fallback Firestore-only deletion...');
-        await _firestore.collection('users').doc(userId).delete();
-        print('Fallback: Successfully deleted user from Firestore only');
-        print('WARNING: Firebase Auth account may still exist');
-        return true;
-      } catch (fallbackError) {
-        print('Fallback deletion also failed: $fallbackError');
-        return false;
-      }
+      // Enforce full deletion requirement (Auth + Firestore).
+      // Do not fall back to Firestore-only deletion.
+      return false;
     }
   }
 
