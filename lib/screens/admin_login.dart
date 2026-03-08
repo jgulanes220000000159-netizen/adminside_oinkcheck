@@ -322,7 +322,7 @@ class _AdminLoginState extends State<AdminLogin> {
                           ),
                           SizedBox(height: padding * 0.2),
                           Text(
-                            'Admin Portal',
+                            'Login Portal',
                             style: TextStyle(
                               color: const Color.fromARGB(255, 42, 157, 50),
                               fontSize: titleFontSize,
@@ -343,7 +343,7 @@ class _AdminLoginState extends State<AdminLogin> {
                           ),
                           SizedBox(height: 2),
                           Text(
-                            'Log in to admin dashboard',
+                            'Log in your account',
                             style: TextStyle(
                               color: Colors.grey,
                               fontSize: subtitleFontSize,

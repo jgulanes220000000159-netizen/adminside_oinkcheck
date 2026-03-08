@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'dart:async';
+import 'package:qr_flutter/qr_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 class LandingPage extends StatelessWidget {
@@ -13,7 +14,7 @@ class LandingPage extends StatelessWidget {
   static const Color _textSec = Color(0xFF616161);
 
   static const String _playStoreUrl =
-      'https://drive.google.com/drive/folders/1kbf47I0L3mEflP3rljq0loCMLJc5fi8n?usp=sharing';
+      'https://firebasestorage.googleapis.com/v0/b/oinkcheck-d07df.firebasestorage.app/o/OinkCheckApp.apk?alt=media&token=cc4e5849-9e39-4c06-aec9-8d9123a84117';
 
   static const List<_DiseaseInfo> _diseases = [
     _DiseaseInfo(
@@ -351,13 +352,18 @@ class LandingPage extends StatelessWidget {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              ClipRRect(
-                borderRadius: BorderRadius.circular(12),
-                child: Image.asset(
-                  'assets/qrc.jpg',
-                  width: 150,
-                  height: 150,
-                  fit: BoxFit.cover,
+              QrImageView(
+                data: _playStoreUrl,
+                version: QrVersions.auto,
+                size: 150,
+                backgroundColor: Colors.white,
+                eyeStyle: const QrEyeStyle(
+                  eyeShape: QrEyeShape.square,
+                  color: Color(0xFF1B5E20),
+                ),
+                dataModuleStyle: const QrDataModuleStyle(
+                  dataModuleShape: QrDataModuleShape.square,
+                  color: Color(0xFF1B5E20),
                 ),
               ),
               const SizedBox(height: 10),
