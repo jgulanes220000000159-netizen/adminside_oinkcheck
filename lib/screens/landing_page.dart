@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'dart:async';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
+import '../services/app_config_service.dart';
 
 class LandingPage extends StatelessWidget {
   const LandingPage({Key? key, required this.onLoginPressed}) : super(key: key);
@@ -336,88 +337,96 @@ class LandingPage extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 36),
-        Container(
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(16),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.15),
-                blurRadius: 24,
-                offset: const Offset(0, 8),
-              ),
-            ],
+        FutureBuilder<String>(
+          future: AppConfigService.getAndroidDownloadUrl(
+            fallbackUrl: _playStoreUrl,
           ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              QrImageView(
-                data: _playStoreUrl,
-                version: QrVersions.auto,
-                size: 150,
-                backgroundColor: Colors.white,
-                eyeStyle: const QrEyeStyle(
-                  eyeShape: QrEyeShape.square,
-                  color: Color(0xFF1B5E20),
-                ),
-                dataModuleStyle: const QrDataModuleStyle(
-                  dataModuleShape: QrDataModuleShape.square,
-                  color: Color(0xFF1B5E20),
-                ),
-              ),
-              const SizedBox(height: 10),
-              const Text(
-                'Download the app',
-                style: TextStyle(
-                  color: _primary,
-                  fontSize: 13,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-              const SizedBox(height: 6),
-              Text(
-                'Scan QR code with your phone',
-                style: TextStyle(color: Colors.grey.shade500, fontSize: 11),
-              ),
-              const SizedBox(height: 8),
-              MouseRegion(
-                cursor: SystemMouseCursors.click,
-                child: GestureDetector(
-                  onTap: () async {
-                    final uri = Uri.parse(_playStoreUrl);
-                    if (await canLaunchUrl(uri)) {
-                      await launchUrl(
-                        uri,
-                        mode: LaunchMode.externalApplication,
-                      );
-                    }
-                  },
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(
-                        Icons.open_in_new_rounded,
-                        size: 14,
-                        color: _primary,
-                      ),
-                      const SizedBox(width: 4),
-                      Text(
-                        'or click here to download',
-                        style: TextStyle(
-                          color: _primary,
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                          decoration: TextDecoration.underline,
-                          decorationColor: _primary,
-                        ),
-                      ),
-                    ],
+          builder: (context, snapshot) {
+            final downloadUrl = snapshot.data ?? _playStoreUrl;
+            return Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(16),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.15),
+                    blurRadius: 24,
+                    offset: const Offset(0, 8),
                   ),
-                ),
+                ],
               ),
-            ],
-          ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  QrImageView(
+                    data: downloadUrl,
+                    version: QrVersions.auto,
+                    size: 150,
+                    backgroundColor: Colors.white,
+                    eyeStyle: const QrEyeStyle(
+                      eyeShape: QrEyeShape.square,
+                      color: Color(0xFF1B5E20),
+                    ),
+                    dataModuleStyle: const QrDataModuleStyle(
+                      dataModuleShape: QrDataModuleShape.square,
+                      color: Color(0xFF1B5E20),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  const Text(
+                    'Download the app',
+                    style: TextStyle(
+                      color: _primary,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    'Scan QR code with your phone',
+                    style: TextStyle(color: Colors.grey.shade500, fontSize: 11),
+                  ),
+                  const SizedBox(height: 8),
+                  MouseRegion(
+                    cursor: SystemMouseCursors.click,
+                    child: GestureDetector(
+                      onTap: () async {
+                        final uri = Uri.parse(downloadUrl);
+                        if (await canLaunchUrl(uri)) {
+                          await launchUrl(
+                            uri,
+                            mode: LaunchMode.externalApplication,
+                          );
+                        }
+                      },
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.open_in_new_rounded,
+                            size: 14,
+                            color: _primary,
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            'or click here to download',
+                            style: TextStyle(
+                              color: _primary,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              decoration: TextDecoration.underline,
+                              decorationColor: _primary,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
         ),
       ],
     );

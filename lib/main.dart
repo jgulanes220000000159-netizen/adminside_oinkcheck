@@ -7,6 +7,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'firebase_options.dart';
 import 'screens/admin_login.dart';
 import 'screens/admin_setup.dart';
+import 'screens/create_admin_account.dart';
 import 'screens/admin_dashboard.dart';
 import 'screens/landing_page.dart';
 import 'models/admin_user.dart';
@@ -65,13 +66,15 @@ class MyApp extends StatelessWidget {
       ),
       routes: {
         '/': (context) => const AuthWrapper(),
-        '/login': (context) => AdminLogin(
-          onBackToLanding: () => Navigator.of(context).pushNamedAndRemoveUntil(
-            '/',
-            (route) => false,
-          ),
-        ),
+        '/login':
+            (context) => AdminLogin(
+              onBackToLanding:
+                  () => Navigator.of(
+                    context,
+                  ).pushNamedAndRemoveUntil('/', (route) => false),
+            ),
         '/setup': (context) => const AdminSetup(),
+        '/create-admin': (context) => const CreateAdminAccount(),
       },
       initialRoute: '/',
     );
@@ -144,13 +147,10 @@ class _AuthWrapperState extends State<AuthWrapper> {
 
         // User tapped Login on landing — check if any admins exist
         return FutureBuilder<QuerySnapshot>(
-          future: FirebaseFirestore.instance
-              .collection('admins')
-              .limit(1)
-              .get(),
+          future:
+              FirebaseFirestore.instance.collection('admins').limit(1).get(),
           builder: (context, adminCheckSnapshot) {
-            if (adminCheckSnapshot.connectionState ==
-                ConnectionState.waiting) {
+            if (adminCheckSnapshot.connectionState == ConnectionState.waiting) {
               return const Scaffold(
                 body: Center(child: CircularProgressIndicator()),
               );

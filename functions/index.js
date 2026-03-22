@@ -217,6 +217,7 @@ exports.createUserAccount = onCall(
       "expert",
       "head_veterinarian",
       "machine_learning_expert",
+      "admin",
     ];
     if (!validRoles.includes(role)) {
       throw new Error(`Invalid role. Must be one of: ${validRoles.join(", ")}`);
@@ -250,29 +251,54 @@ exports.createUserAccount = onCall(
 
       const uid = userRecord.uid;
 
-      // Create user document in Firestore
-      await admin
-        .firestore()
-        .collection("users")
-        .doc(uid)
-        .set({
-          userId: uid,
-          fullName: fullName,
-          email: email,
-          phoneNumber: phoneNumber,
-          street: street,
-          province: province,
-          cityMunicipality: cityMunicipality,
-          barangay: barangay,
-          address:
-            address ||
-            `${street ? street + ", " : ""}${barangay}, ${cityMunicipality}, ${province}`,
-          role: role,
-          status: "active", // Experts are automatically active
-          imageProfile: "",
-          createdAt: admin.firestore.FieldValue.serverTimestamp(),
-          acceptedAt: admin.firestore.FieldValue.serverTimestamp(), // Auto-accepted
-        });
+      if (role === "admin") {
+        // Admin accounts are stored in the admins collection.
+        await admin
+          .firestore()
+          .collection("admins")
+          .doc(uid)
+          .set({
+            adminID: uid,
+            adminName: fullName,
+            email: email,
+            phoneNumber: phoneNumber,
+            street: street,
+            province: province,
+            cityMunicipality: cityMunicipality,
+            barangay: barangay,
+            address:
+              address ||
+              `${street ? street + ", " : ""}${barangay}, ${cityMunicipality}, ${province}`,
+            role: "admin",
+            imageProfile: "",
+            createdAt: admin.firestore.FieldValue.serverTimestamp(),
+            notificationPrefs: { email: true },
+          });
+      } else {
+        // Expert-type accounts are stored in the users collection.
+        await admin
+          .firestore()
+          .collection("users")
+          .doc(uid)
+          .set({
+            userId: uid,
+            fullName: fullName,
+            email: email,
+            phoneNumber: phoneNumber,
+            street: street,
+            province: province,
+            cityMunicipality: cityMunicipality,
+            barangay: barangay,
+            address:
+              address ||
+              `${street ? street + ", " : ""}${barangay}, ${cityMunicipality}, ${province}`,
+            role: role,
+            status: "active", // Expert roles are automatically active
+            imageProfile: "",
+            createdAt: admin.firestore.FieldValue.serverTimestamp(),
+            acceptedAt: admin.firestore.FieldValue.serverTimestamp(), // Auto-accepted
+          });
+      }
 
       console.log(`createUserAccount: Successfully created user ${uid}`);
 

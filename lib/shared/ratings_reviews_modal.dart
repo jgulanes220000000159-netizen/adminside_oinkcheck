@@ -15,6 +15,35 @@ class _RatingsReviewsModalContentState extends State<RatingsReviewsModalContent>
   late TabController _tabController;
   int? _selectedRatingFilter; // null = All, 1-5 = specific rating
 
+  static const Set<String> _veterinarianRoles = {
+    'expert',
+    'head_veterinarian',
+    'head veterinarian',
+    'head veterenarian',
+    'head_vet',
+    'head vet',
+    'veterinarian',
+    'veterenarian',
+  };
+
+  String _normalizeRole(String? rawRole) {
+    final role = (rawRole ?? '')
+        .toLowerCase()
+        .replaceAll(RegExp(r'[_\-]+'), ' ')
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .trim();
+    if (role == 'head veterinarian' || role == 'head vet' || role == 'head_vet') {
+      return 'head_veterinarian';
+    }
+    if (role == 'head veterenarian') {
+      return 'head_veterinarian';
+    }
+    if (role == 'veterenarian') {
+      return 'veterinarian';
+    }
+    return role;
+  }
+
   double _calcAverageFromDocs(List<QueryDocumentSnapshot> docs) {
     double total = 0.0;
     int count = 0;
@@ -549,7 +578,6 @@ class _RatingsReviewsModalContentState extends State<RatingsReviewsModalContent>
       stream:
           FirebaseFirestore.instance
               .collection('app_ratings')
-              .where('userRole', whereIn: ['expert', 'head_veterinarian'])
               .snapshots(),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
@@ -560,7 +588,11 @@ class _RatingsReviewsModalContentState extends State<RatingsReviewsModalContent>
           return Center(child: Text('Error: ${snapshot.error}'));
         }
 
-        var ratings = snapshot.data?.docs ?? [];
+        var ratings = (snapshot.data?.docs ?? []).where((doc) {
+          final data = doc.data() as Map<String, dynamic>;
+          final normalizedRole = _normalizeRole(data['userRole']?.toString());
+          return _veterinarianRoles.contains(normalizedRole);
+        }).toList();
 
         // Sort by createdAt in memory (descending)
         ratings.sort((a, b) {
@@ -619,17 +651,14 @@ class _RatingsReviewsModalContentState extends State<RatingsReviewsModalContent>
         if (filteredRatings.isEmpty) {
           final avgAll = _calcAverageFromDocs(ratings);
           // Optional breakdown
-          final expertDocs =
-              ratings.where((doc) {
-                final data = doc.data() as Map<String, dynamic>;
-                return (data['userRole']?.toString() ?? '') == 'expert';
-              }).toList();
-          final headDocs =
-              ratings.where((doc) {
-                final data = doc.data() as Map<String, dynamic>;
-                return (data['userRole']?.toString() ?? '') ==
-                    'head_veterinarian';
-              }).toList();
+          final expertDocs = ratings.where((doc) {
+            final data = doc.data() as Map<String, dynamic>;
+            return _normalizeRole(data['userRole']?.toString()) == 'expert';
+          }).toList();
+          final headDocs = ratings.where((doc) {
+            final data = doc.data() as Map<String, dynamic>;
+            return _normalizeRole(data['userRole']?.toString()) == 'head_veterinarian';
+          }).toList();
           final expertAvg = _calcAverageFromDocs(expertDocs);
           final headAvg = _calcAverageFromDocs(headDocs);
           final breakdown =
@@ -639,7 +668,7 @@ class _RatingsReviewsModalContentState extends State<RatingsReviewsModalContent>
           return Column(
             children: [
               _buildAverageHeader(
-                title: 'Experts & Head Vets average rating',
+                title: 'Veterinarians average rating',
                 average: avgAll,
                 totalCount: ratings.length,
                 breakdownText: breakdown,
@@ -673,17 +702,14 @@ class _RatingsReviewsModalContentState extends State<RatingsReviewsModalContent>
 
         final avgAll = _calcAverageFromDocs(ratings);
         // Optional breakdown
-        final expertDocs =
-            ratings.where((doc) {
-              final data = doc.data() as Map<String, dynamic>;
-              return (data['userRole']?.toString() ?? '') == 'expert';
-            }).toList();
-        final headDocs =
-            ratings.where((doc) {
-              final data = doc.data() as Map<String, dynamic>;
-              return (data['userRole']?.toString() ?? '') ==
-                  'head_veterinarian';
-            }).toList();
+        final expertDocs = ratings.where((doc) {
+          final data = doc.data() as Map<String, dynamic>;
+          return _normalizeRole(data['userRole']?.toString()) == 'expert';
+        }).toList();
+        final headDocs = ratings.where((doc) {
+          final data = doc.data() as Map<String, dynamic>;
+          return _normalizeRole(data['userRole']?.toString()) == 'head_veterinarian';
+        }).toList();
         final expertAvg = _calcAverageFromDocs(expertDocs);
         final headAvg = _calcAverageFromDocs(headDocs);
         final breakdown =
@@ -693,7 +719,7 @@ class _RatingsReviewsModalContentState extends State<RatingsReviewsModalContent>
         return Column(
           children: [
             _buildAverageHeader(
-              title: 'Experts & Head Vets average rating',
+              title: 'Veterinarians average rating',
               average: avgAll,
               totalCount: ratings.length,
               breakdownText: breakdown,
@@ -710,7 +736,9 @@ class _RatingsReviewsModalContentState extends State<RatingsReviewsModalContent>
                   final comment = data['comment']?.toString() ?? '';
                   final userName =
                       data['userName']?.toString() ?? 'Unknown Expert';
-                  final userRole = data['userRole']?.toString() ?? 'expert';
+                  final userRole = _normalizeRole(
+                    data['userRole']?.toString() ?? 'expert',
+                  );
                   final createdAt = data['createdAt'];
                   DateTime? date;
                   if (createdAt != null) {
@@ -726,18 +754,17 @@ class _RatingsReviewsModalContentState extends State<RatingsReviewsModalContent>
                     rating: rating,
                     comment: comment,
                     date: date,
-                    icon:
-                        userRole == 'head_veterinarian'
-                            ? Icons.verified_user
-                            : Icons.medical_services,
-                    color:
-                        userRole == 'head_veterinarian'
-                            ? Colors.blue
-                            : Colors.purple,
-                    role:
-                        userRole == 'head_veterinarian'
-                            ? 'Head Veterinarian'
-                            : 'Expert',
+                    icon: userRole == 'head_veterinarian'
+                        ? Icons.verified_user
+                        : Icons.medical_services,
+                    color: userRole == 'head_veterinarian'
+                        ? Colors.blue
+                        : Colors.purple,
+                    role: userRole == 'head_veterinarian'
+                        ? 'Head Veterinarian'
+                        : (userRole == 'veterinarian'
+                              ? 'Head veterenatian'
+                              : 'Expert'),
                   );
                 },
               ),

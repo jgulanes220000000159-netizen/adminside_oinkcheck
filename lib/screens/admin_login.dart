@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import '../models/admin_user.dart';
 import 'admin_dashboard.dart';
+import 'create_admin_account.dart';
+import 'admin_setup.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_core/firebase_core.dart';
@@ -179,6 +181,25 @@ class _AdminLoginState extends State<AdminLogin> {
       setState(() {
         _errorMessage = e.message ?? 'Failed to send reset email.';
       });
+    }
+  }
+
+  // ignore: unused_element
+  Future<void> _openAdminCreationFlow() async {
+    final admins =
+        await FirebaseFirestore.instance.collection('admins').limit(1).get();
+    if (!mounted) return;
+
+    if (admins.docs.isEmpty) {
+      Navigator.push(
+        context,
+        MaterialPageRoute(builder: (context) => const AdminSetup()),
+      );
+    } else {
+      Navigator.push(
+        context,
+        MaterialPageRoute(builder: (context) => const CreateAdminAccount()),
+      );
     }
   }
 
@@ -536,6 +557,7 @@ class _AdminLoginState extends State<AdminLogin> {
                                       ),
                             ),
                           ),
+                          SizedBox(height: padding * 0.3),
                           // Back to Landing Page
                           if (widget.onBackToLanding != null) ...[
                             SizedBox(height: is1366x768 ? 6 : 12),
@@ -552,13 +574,20 @@ class _AdminLoginState extends State<AdminLogin> {
                                 label: Text(
                                   'Back to Landing Page',
                                   style: TextStyle(
-                                    color: const Color.fromARGB(255, 42, 157, 50),
+                                    color: const Color.fromARGB(
+                                      255,
+                                      42,
+                                      157,
+                                      50,
+                                    ),
                                     fontSize: subtitleFontSize * 0.9,
                                     fontWeight: FontWeight.w500,
                                   ),
                                 ),
                                 style: OutlinedButton.styleFrom(
-                                  side: const BorderSide(color: Color.fromARGB(255, 42, 157, 50)),
+                                  side: const BorderSide(
+                                    color: Color.fromARGB(255, 42, 157, 50),
+                                  ),
                                   shape: RoundedRectangleBorder(
                                     borderRadius: BorderRadius.circular(5),
                                   ),

@@ -12,6 +12,24 @@ class RatingsReviewsCard extends StatefulWidget {
 class _RatingsReviewsCardState extends State<RatingsReviewsCard> {
   final ValueNotifier<bool> _isHovered = ValueNotifier(false);
 
+  String _normalizeRole(String? rawRole) {
+    final role = (rawRole ?? '')
+        .toLowerCase()
+        .replaceAll(RegExp(r'[_\-]+'), ' ')
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .trim();
+    if (role == 'head veterinarian' || role == 'head vet' || role == 'head_vet') {
+      return 'head_veterinarian';
+    }
+    if (role == 'head veterenarian') {
+      return 'head_veterinarian';
+    }
+    if (role == 'veterenarian') {
+      return 'veterinarian';
+    }
+    return role;
+  }
+
   @override
   void dispose() {
     _isHovered.dispose();
@@ -66,6 +84,7 @@ class _RatingsReviewsCardState extends State<RatingsReviewsCard> {
             // Calculate counts and average rating
             int farmerRatingsCount = 0;
             int expertRatingsCount = 0;
+            int headVetRatingsCount = 0;
             int mlExpertRatingsCount = 0;
             double totalRating = 0.0;
             int ratingCount = 0;
@@ -74,14 +93,16 @@ class _RatingsReviewsCardState extends State<RatingsReviewsCard> {
             if (appRatingsSnapshot.hasData) {
               for (final doc in appRatingsSnapshot.data!.docs) {
                 final data = doc.data() as Map<String, dynamic>;
-                final userRole = data['userRole']?.toString() ?? '';
+                final userRole = _normalizeRole(data['userRole']?.toString());
                 final rating = (data['rating'] as num?)?.toDouble();
 
                 if (userRole == 'farmer') {
                   farmerRatingsCount++;
-                } else if (userRole == 'expert' ||
-                    userRole == 'head_veterinarian') {
+                } else if (userRole == 'expert') {
                   expertRatingsCount++;
+                } else if (userRole == 'head_veterinarian' ||
+                    userRole == 'veterinarian') {
+                  headVetRatingsCount++;
                 }
 
                 // Include all app ratings (farmers, experts, head vets)
@@ -95,7 +116,7 @@ class _RatingsReviewsCardState extends State<RatingsReviewsCard> {
             // Process ML expert evaluations (include their ratings in overall average)
             if (mlEvaluationsSnapshot.hasData) {
               final mlDocs = mlEvaluationsSnapshot.data!.docs;
-              mlExpertRatingsCount = mlDocs.length;
+              mlExpertRatingsCount += mlDocs.length;
               for (final doc in mlDocs) {
                 final data = doc.data() as Map<String, dynamic>;
                 final rating = (data['rating'] as num?)?.toDouble();
@@ -109,7 +130,10 @@ class _RatingsReviewsCardState extends State<RatingsReviewsCard> {
             final averageRating =
                 ratingCount > 0 ? totalRating / ratingCount : 0.0;
             final totalCount =
-                farmerRatingsCount + expertRatingsCount + mlExpertRatingsCount;
+                farmerRatingsCount +
+                expertRatingsCount +
+                headVetRatingsCount +
+                mlExpertRatingsCount;
 
             return Column(
               mainAxisSize: MainAxisSize.min,

@@ -29,6 +29,32 @@ class _UserManagementState extends State<UserManagement> {
   // Debounce timer for search
   Timer? _searchDebounce;
 
+  String _formatDateLikeUsers(dynamic value) {
+    DateTime? dt;
+    if (value is cf.Timestamp) {
+      dt = value.toDate();
+    } else if (value is String && value.trim().isNotEmpty) {
+      dt = DateTime.tryParse(value.trim());
+    }
+
+    if (dt == null) return '—';
+    const months = [
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec',
+    ];
+    return '${months[dt.month - 1]} ${dt.day} ${dt.year}';
+  }
+
   void _showImagePreview(String imageUrl) {
     showDialog(
       context: context,
@@ -100,8 +126,31 @@ class _UserManagementState extends State<UserManagement> {
 
     try {
       final users = await UserStore.getUsers();
+      final adminSnapshot =
+          await cf.FirebaseFirestore.instance.collection('admins').get();
+
+      final adminUsers =
+          adminSnapshot.docs.map((doc) {
+            final data = doc.data();
+            final registeredAt = _formatDateLikeUsers(data['createdAt']);
+
+            return <String, dynamic>{
+              'id': doc.id,
+              'name': (data['adminName'] ?? 'Admin').toString(),
+              'email': (data['email'] ?? '').toString(),
+              'phone': (data['phoneNumber'] ?? '').toString(),
+              'address': (data['address'] ?? '').toString(),
+              'status': 'active',
+              'role': 'admin',
+              'registeredAt': registeredAt,
+              'acceptedAt': registeredAt == '—' ? '—' : registeredAt,
+              'profileImage': (data['imageProfile'] ?? '').toString(),
+            };
+          }).toList();
+
+      final mergedUsers = <Map<String, dynamic>>[...users, ...adminUsers];
       setState(() {
-        _users = users;
+        _users = mergedUsers;
         _isLoading = false;
         // Clear cache when loading new data
         _cachedFilteredUsers = null;
@@ -119,10 +168,10 @@ class _UserManagementState extends State<UserManagement> {
     }
   }
 
-  void _showCreateExpertDialog() {
+  void _showCreateAccountDialog() {
     showDialog(
       context: context,
-      builder: (context) => const CreateExpertDialog(),
+      builder: (context) => const CreateAccountDialog(),
     ).then((success) {
       // Reload users after dialog closes (only if account was created successfully)
       if (success == true) {
@@ -156,14 +205,11 @@ class _UserManagementState extends State<UserManagement> {
             bool matchesFilter = false;
             if (_selectedFilter == 'All') {
               matchesFilter = true;
-            } else if (_selectedFilter == 'Active') {
-              // Filter by status
-              matchesFilter =
-                  user['status'].toLowerCase() == _selectedFilter.toLowerCase();
             } else if (_selectedFilter == 'Expert' ||
                 _selectedFilter == 'Farmer' ||
                 _selectedFilter == 'Machine Learning Expert' ||
-                _selectedFilter == 'Head Veterinarian') {
+                _selectedFilter == 'Head Veterinarian' ||
+                _selectedFilter == 'Admin') {
               // Filter by role
               final filterRole = _selectedFilter.toLowerCase().replaceAll(
                 ' ',
@@ -992,9 +1038,9 @@ class _UserManagementState extends State<UserManagement> {
               Row(
                 children: [
                   ElevatedButton.icon(
-                    onPressed: () => _showCreateExpertDialog(),
+                    onPressed: () => _showCreateAccountDialog(),
                     icon: const Icon(Icons.person_add),
-                    label: const Text('Create Expert Account'),
+                    label: const Text('Create Account'),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: const Color(0xFF2D7204),
                       foregroundColor: Colors.white,
@@ -1051,11 +1097,11 @@ class _UserManagementState extends State<UserManagement> {
                 items:
                     [
                           'All',
-                          'Active',
                           'Expert',
                           'Farmer',
                           'Machine Learning Expert',
                           'Head Veterinarian',
+                          'Admin',
                         ]
                         .map(
                           (status) => DropdownMenuItem(
@@ -1094,15 +1140,30 @@ class _UserManagementState extends State<UserManagement> {
                               ),
                               child: DataTable(
                                 showCheckboxColumn: false,
+                                columnSpacing: 10,
+                                horizontalMargin: 8,
+                                dataRowMinHeight: 54,
+                                dataRowMaxHeight: 60,
+                                headingRowHeight: 52,
                                 columns: const [
                                   DataColumn(label: Text('Name')),
                                   DataColumn(label: Text('Email')),
                                   DataColumn(label: Text('Phone Number')),
-                                  DataColumn(label: Text('Address')),
-                                  DataColumn(label: Text('Status')),
-                                  DataColumn(label: Text('Role')),
-                                  DataColumn(label: Text('Registered')),
-                                  DataColumn(label: Text('Accepted')),
+                                  DataColumn(
+                                    label: Text('Address'),
+                                  ),
+                                  DataColumn(
+                                    label: SizedBox(
+                                      width: 110,
+                                      child: Text('Role'),
+                                    ),
+                                  ),
+                                  DataColumn(
+                                    label: SizedBox(
+                                      width: 105,
+                                      child: Text('Registered'),
+                                    ),
+                                  ),
                                   DataColumn(label: Text('Actions')),
                                 ],
                                 rows:
@@ -1189,35 +1250,34 @@ class _UserManagementState extends State<UserManagement> {
                                                 Text(user['phone'] ?? ''),
                                               ),
                                               DataCell(
-                                                Text(user['address'] ?? ''),
-                                              ),
-                                              DataCell(
-                                                Text(
-                                                  user['status'].toUpperCase(),
-                                                  style: TextStyle(
-                                                    color: _getStatusColor(
-                                                      user['status'],
-                                                    ),
-                                                    fontWeight: FontWeight.bold,
+                                                SizedBox(
+                                                  width: 420,
+                                                  child: Text(
+                                                    user['address'] ?? '',
+                                                    softWrap: true,
                                                   ),
                                                 ),
                                               ),
                                               DataCell(
-                                                Text(
-                                                  _formatRoleName(user['role']),
-                                                  style: TextStyle(
-                                                    color: _getRoleColor(
-                                                      user['role'],
+                                                SizedBox(
+                                                  width: 110,
+                                                  child: Text(
+                                                    _formatRoleName(user['role']),
+                                                    style: TextStyle(
+                                                      color: _getRoleColor(
+                                                        user['role'],
+                                                      ),
+                                                      fontWeight:
+                                                          FontWeight.bold,
                                                     ),
-                                                    fontWeight: FontWeight.bold,
                                                   ),
                                                 ),
                                               ),
                                               DataCell(
-                                                Text(user['registeredAt']),
-                                              ),
-                                              DataCell(
-                                                Text(user['acceptedAt'] ?? '—'),
+                                                SizedBox(
+                                                  width: 105,
+                                                  child: Text(user['registeredAt']),
+                                                ),
                                               ),
                                               DataCell(
                                                 Builder(
@@ -1235,6 +1295,8 @@ class _UserManagementState extends State<UserManagement> {
                                                             'machine_learning_expert';
                                                     final isFarmer =
                                                         userRole == 'farmer';
+                                                    final isAdmin =
+                                                        userRole == 'admin';
 
                                                     return Row(
                                                       children: [
@@ -1278,6 +1340,19 @@ class _UserManagementState extends State<UserManagement> {
                                                                       user,
                                                                     ),
                                                           ),
+                                                        if (isAdmin)
+                                                          IconButton(
+                                                            icon: const Icon(
+                                                              Icons.visibility,
+                                                            ),
+                                                            tooltip:
+                                                                'View User Details',
+                                                            onPressed:
+                                                                () =>
+                                                                    _showViewDialog(
+                                                                      user,
+                                                                    ),
+                                                          ),
                                                       ],
                                                     );
                                                   },
@@ -1299,17 +1374,6 @@ class _UserManagementState extends State<UserManagement> {
     );
   }
 
-  Color _getStatusColor(String status) {
-    switch (status.toLowerCase()) {
-      case 'active':
-        return Colors.green;
-      case 'pending':
-        return Colors.orange;
-      default:
-        return Colors.grey;
-    }
-  }
-
   // Format role name for display (replace underscores with spaces, uppercase)
   String _formatRoleName(String role) {
     return role.replaceAll('_', ' ').toUpperCase();
@@ -1325,21 +1389,23 @@ class _UserManagementState extends State<UserManagement> {
         return const Color(0xFF9C27B0); // purple
       case 'head_veterinarian':
         return const Color(0xFF2196F3); // blue
+      case 'admin':
+        return const Color(0xFF607D8B); // blue grey
       default:
         return Colors.grey;
     }
   }
 }
 
-// Dialog for creating expert accounts
-class CreateExpertDialog extends StatefulWidget {
-  const CreateExpertDialog({Key? key}) : super(key: key);
+// Dialog for creating accounts
+class CreateAccountDialog extends StatefulWidget {
+  const CreateAccountDialog({Key? key}) : super(key: key);
 
   @override
-  State<CreateExpertDialog> createState() => _CreateExpertDialogState();
+  State<CreateAccountDialog> createState() => _CreateAccountDialogState();
 }
 
-class _CreateExpertDialogState extends State<CreateExpertDialog> {
+class _CreateAccountDialogState extends State<CreateAccountDialog> {
   final _formKey = GlobalKey<FormState>();
   final _nameController = TextEditingController();
   final _emailController = TextEditingController();
@@ -1364,11 +1430,12 @@ class _CreateExpertDialogState extends State<CreateExpertDialog> {
   String? _errorMessage;
   bool _checkingHeadVet = false;
 
-  // Available roles for expert accounts
+  // Available roles for account creation
   final List<Map<String, String>> _availableRoles = [
     {'value': 'expert', 'label': 'Expert'},
     {'value': 'head_veterinarian', 'label': 'Head Veterinarian'},
     {'value': 'machine_learning_expert', 'label': 'Machine Learning Expert'},
+    {'value': 'admin', 'label': 'Admin'},
   ];
 
   @override
@@ -1468,7 +1535,7 @@ class _CreateExpertDialogState extends State<CreateExpertDialog> {
     }
   }
 
-  Future<void> _createExpertAccount() async {
+  Future<void> _createAccount() async {
     if (!_formKey.currentState!.validate()) {
       return;
     }
@@ -1614,7 +1681,7 @@ class _CreateExpertDialogState extends State<CreateExpertDialog> {
                     const SizedBox(width: 12),
                     const Expanded(
                       child: Text(
-                        'Create Expert Account',
+                        'Create Account',
                         style: TextStyle(
                           fontSize: 20,
                           fontWeight: FontWeight.bold,
@@ -1678,7 +1745,7 @@ class _CreateExpertDialogState extends State<CreateExpertDialog> {
                                 controller: _nameController,
                                 decoration: const InputDecoration(
                                   labelText: 'Full Name *',
-                                  hintText: 'Enter expert full name',
+                                  hintText: 'Enter full name',
                                   prefixIcon: Icon(Icons.person_outline),
                                   border: OutlineInputBorder(),
                                 ),
@@ -2009,7 +2076,7 @@ class _CreateExpertDialogState extends State<CreateExpertDialog> {
                                     onPressed:
                                         _isLoading
                                             ? null
-                                            : _createExpertAccount,
+                                            : _createAccount,
                                     style: ElevatedButton.styleFrom(
                                       backgroundColor: const Color(0xFF2D7204),
                                       foregroundColor: Colors.white,
