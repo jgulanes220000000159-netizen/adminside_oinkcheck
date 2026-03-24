@@ -676,51 +676,17 @@ class _DiseaseMapWidgetState extends State<DiseaseMapWidget>
     return Colors.green;
   }
 
-  /// Get heatmap color based on intensity (0.0 to 1.0)
-  /// Returns gradient from green (low) -> yellow (medium) -> red (high)
-  ///
-  /// Fixed Absolute Thresholds:
-  /// - Low (Green): 0-24 cases
-  /// - Medium (Yellow): 25-49 cases
-  /// - High (Red): 50+ cases
+  /// Get heatmap color based on normalized intensity (0.0 to 1.0).
+  /// Uses strict category colors (no gradient):
+  /// - Low: Green
+  /// - Medium: Orange
+  /// - High: Red
   Color _getHeatmapColor(double intensity) {
-    if (intensity <= 0.0) return const Color(0xFF4CAF50); // Green
-    if (intensity >= 1.0) return const Color(0xFFF44336); // Red
-
-    // Define thresholds for Low/Medium/High
-    const lowThreshold = 0.33; // 0.0 to 0.33 = Low (Green)
-    const mediumThreshold = 0.67; // 0.33 to 0.67 = Medium (Yellow)
-    // 0.67 to 1.0 = High (Red)
-
-    if (intensity < lowThreshold) {
-      // Low: Green to Light Green (0.0 to 0.33)
-      final t = intensity / lowThreshold; // Scale to 0.0-1.0
-      return Color.lerp(
-        const Color(0xFF4CAF50), // Green
-        const Color(0xFF8BC34A), // Light Green
-        t,
-      )!;
-    } else if (intensity < mediumThreshold) {
-      // Medium: Light Green to Yellow (0.33 to 0.67)
-      final t =
-          (intensity - lowThreshold) /
-          (mediumThreshold - lowThreshold); // Scale to 0.0-1.0
-      return Color.lerp(
-        const Color(0xFF8BC34A), // Light Green
-        const Color(0xFFFFEB3B), // Yellow
-        t,
-      )!;
-    } else {
-      // High: Yellow to Red (0.67 to 1.0)
-      final t =
-          (intensity - mediumThreshold) /
-          (1.0 - mediumThreshold); // Scale to 0.0-1.0
-      return Color.lerp(
-        const Color(0xFFFFEB3B), // Yellow
-        const Color(0xFFF44336), // Red
-        t,
-      )!;
-    }
+    // Intensity buckets map to percentage buckets:
+    // <= 0.33 => <=10% (Low), <= 0.67 => 11-30% (Medium), > 0.67 => >=31% (High)
+    if (intensity <= 0.33) return const Color(0xFF4CAF50); // Green
+    if (intensity <= 0.67) return const Color(0xFFFF9800); // Orange
+    return const Color(0xFFF44336); // Red
   }
 
   /// Get intensity category label based on percentage of completed scans
@@ -757,7 +723,7 @@ class _DiseaseMapWidgetState extends State<DiseaseMapWidget>
                       children: [
                         _buildLegendItem(const Color(0xFF4CAF50), 'Low'),
                         const SizedBox(width: 16),
-                        _buildLegendItem(const Color(0xFFFFEB3B), 'Medium'),
+                        _buildLegendItem(const Color(0xFFFF9800), 'Medium'),
                         const SizedBox(width: 16),
                         _buildLegendItem(const Color(0xFFF44336), 'High'),
                       ],
