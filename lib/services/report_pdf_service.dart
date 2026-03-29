@@ -6,18 +6,7 @@ import 'package:printing/printing.dart';
 import 'scan_requests_service.dart';
 // import 'settings_service.dart';
 // import 'weather_service.dart'; // Commented out - weather summary removed for now
-
-bool _isExcludedDiseasePdf(String name) {
-  if (name.isEmpty) return false;
-  final n = name
-      .toLowerCase()
-      .replaceAll(RegExp(r'[_\-]+'), ' ')
-      .replaceAll(RegExp(r'\s+'), ' ')
-      .trim();
-  return n.contains('dermatitis') ||
-      n.contains('dermatatis') ||
-      n.contains('pityriasis');
-}
+import '../shared/report_disease_catalog.dart';
 
 class ReportPdfService {
   static Future<void> generateAndShareReport({
@@ -195,6 +184,7 @@ class ReportPdfService {
 
     // Build disease stats from validated data - count reports, not boxes
     final Map<String, int> diseaseCounts = {};
+    int healthyCount = 0;
     for (final r in filteredCreatedCompleted) {
       // ONLY use expert-validated disease summary (skip reports without expert validation)
       final expertDiseaseSummary = r['expertDiseaseSummary'];
@@ -207,10 +197,11 @@ class ReportPdfService {
 
       // Collect unique disease types in this report (each report counts as 1 per disease type)
       final Set<String> diseasesInReport = {};
+      bool hasHealthy = false;
 
       if (diseaseSummary.isEmpty) {
         // If no diseases, count as healthy
-        diseasesInReport.add('Healthy');
+        hasHealthy = true;
       } else {
         for (final d in diseaseSummary) {
           String name = 'Unknown';
@@ -222,21 +213,23 @@ class ReportPdfService {
 
           if (name.isEmpty || name == 'Unknown') continue;
 
-          final lower = name.toLowerCase();
-          if (lower.contains('tip burn') || lower.contains('unknown')) continue;
-
-          // Normalize disease name for consistent matching (replace underscores/hyphens with spaces)
-          final normalized =
-              lower
-                  .replaceAll(RegExp(r'[_\-]+'), ' ')
-                  .replaceAll(RegExp(r'\s+'), ' ')
-                  .trim();
-
-          if (_isExcludedDiseasePdf(normalized)) continue;
+          final normalized = normalizeReportDiseaseName(name);
+          if (normalized == 'healthy') {
+            hasHealthy = true;
+            continue;
+          }
+          if (isIgnoredReportDisease(normalized) ||
+              isExcludedReportDisease(normalized)) {
+            continue;
+          }
 
           // Add disease type to set (each report contributes 1 per disease type)
           diseasesInReport.add(normalized);
         }
+      }
+
+      if (hasHealthy) {
+        healthyCount++;
       }
 
       // Count each disease type once per report
@@ -255,7 +248,7 @@ class ReportPdfService {
 
     String classifyTrend(String diseaseName) {
       // Build series for this disease from daily counts
-      final lower = diseaseName.toLowerCase();
+      final lower = normalizeReportDiseaseName(diseaseName);
       final entries =
           trendLabelKeys.map((k) {
             final val =
@@ -267,6 +260,7 @@ class ReportPdfService {
           }).toList();
       if (entries.isEmpty) return 'N/A';
       if (entries.length < 2) return 'N/A';
+      if (entries.every((value) => value <= 0.0)) return 'N/A';
 
       // Split the time range into two halves and compare their averages
       // This is intuitive: "first half vs second half of the period"
@@ -301,25 +295,41 @@ class ReportPdfService {
 
     // Calculate total disease occurrences (sum of all disease counts)
     // Since a report can have multiple diseases, the sum can be > totalReports
-    final int totalDiseaseOccurrences = diseaseCounts.values.fold(
-      0,
-      (sum, count) => sum + count,
-    );
+    final int totalDiseaseOccurrences =
+        healthyCount +
+        diseaseCounts.values.fold(0, (sum, count) => sum + count);
 
-    diseaseCounts.forEach((name, count) {
-      if (_isExcludedDiseasePdf(name)) return;
+    final orderedDiseaseNames = orderedReportDiseaseKeys(
+      observed: diseaseCounts.keys,
+    );
+    for (final name in orderedDiseaseNames) {
+      final count = diseaseCounts[name] ?? 0;
       // Percentage is based on total disease occurrences, not total reports
       // This gives the proportion of each disease among all disease occurrences
       final pct =
           totalDiseaseOccurrences > 0 ? count / totalDiseaseOccurrences : 0.0;
       diseaseStats.add({
-        'name': name,
+        'name': reportDiseaseDisplayName(name),
         'count': count,
         'percentage': pct,
-        'type': name.toLowerCase() == 'healthy' ? 'healthy' : 'disease',
+        'type': 'disease',
         'trend': 'N/A',
       });
-    });
+    }
+
+    if (healthyCount > 0) {
+      final pct =
+          totalDiseaseOccurrences > 0
+              ? healthyCount / totalDiseaseOccurrences
+              : 0.0;
+      diseaseStats.add({
+        'name': 'Healthy',
+        'count': healthyCount,
+        'percentage': pct,
+        'type': 'healthy',
+        'trend': 'N/A',
+      });
+    }
     diseaseStats.sort(
       (a, b) => (b['count'] as int).compareTo(a['count'] as int),
     );
@@ -376,22 +386,15 @@ class ReportPdfService {
 
           if (name.isEmpty || name == 'Unknown') continue;
 
-          final lower = name.toLowerCase();
-          if (lower.contains('tip burn') || lower.contains('unknown')) continue;
-
-          if (lower == 'healthy') {
+          final normalized = normalizeReportDiseaseName(name);
+          if (normalized == 'healthy') {
             hasHealthy = true;
             continue;
           }
-
-          // Normalize disease name for consistent matching (replace underscores/hyphens with spaces)
-          final normalized =
-              lower
-                  .replaceAll(RegExp(r'[_\-]+'), ' ')
-                  .replaceAll(RegExp(r'\s+'), ' ')
-                  .trim();
-
-          if (_isExcludedDiseasePdf(normalized)) continue;
+          if (isIgnoredReportDisease(normalized) ||
+              isExcludedReportDisease(normalized)) {
+            continue;
+          }
 
           // Add disease type to set (each report contributes 1 per disease type)
           diseasesInReport.add(normalized);
@@ -519,30 +522,16 @@ class ReportPdfService {
       // },
     );
 
-    // Build disease multi-series for all diseases (not just top 4)
+    // Build disease multi-series using the full report disease catalog so zero-count
+    // diseases still appear in the exported charts and legends.
     final Map<String, List<double>> diseaseSeriesByName = {};
-    // Determine all diseases by total counts (sorted by count, descending)
-    final List<MapEntry<String, int>> totals =
-        diseaseDayCounts.entries
-            .map(
-              (e) => MapEntry(
-                e.key,
-                e.value.values.fold<int>(0, (sum, v) => sum + v),
-              ),
-            )
-            .toList()
-          ..removeWhere(
-            (e) =>
-                e.key == 'healthy' ||
-                e.key.contains('tip burn') ||
-                e.key.contains('unknown') ||
-                _isExcludedDiseasePdf(e.key),
-          )
-          ..sort((a, b) => b.value.compareTo(a.value));
-    // Show all diseases (or at least up to 10 to avoid overcrowding)
-    final topDiseases = totals.take(10).map((e) => e.key).toList();
-    for (final name in topDiseases) {
-      final perDay = diseaseDayCounts[name] ?? const <String, int>{};
+    final orderedTrendDiseaseKeys = orderedReportDiseaseKeys(
+      observed: diseaseDayCounts.keys,
+    );
+    final topDiseases =
+        orderedTrendDiseaseKeys.map(reportDiseaseDisplayName).toList();
+    for (final diseaseKey in orderedTrendDiseaseKeys) {
+      final perDay = diseaseDayCounts[diseaseKey] ?? const <String, int>{};
       final series =
           displayKeys.map((k) {
             final diseaseCount = perDay[k] ?? 0;
@@ -550,7 +539,7 @@ class ReportPdfService {
             final totalCount = diseaseCount + healthyCount;
             return totalCount > 0 ? (diseaseCount / totalCount) : 0.0;
           }).toList();
-      diseaseSeriesByName[name] = series;
+      diseaseSeriesByName[reportDiseaseDisplayName(diseaseKey)] = series;
     }
 
     doc.addPage(
@@ -953,7 +942,10 @@ class ReportPdfService {
 
     // Get top disease
     final topDisease =
-        diseaseOnlyStats.isNotEmpty ? diseaseOnlyStats.first : null;
+        diseaseOnlyStats.isNotEmpty &&
+                ((diseaseOnlyStats.first['count'] as num?)?.toInt() ?? 0) > 0
+            ? diseaseOnlyStats.first
+            : null;
     final String topDiseaseName = topDisease?['name'] ?? 'None';
     final double topDiseasePercentage =
         ((topDisease?['percentage'] ?? 0.0) as double) * 100;
@@ -1685,7 +1677,11 @@ class ReportPdfService {
     List<Map<String, dynamic>> rows, {
     required bool isHealthy,
   }) {
-    if (rows.isEmpty) {
+    final totalCount = rows.fold<int>(
+      0,
+      (sum, row) => sum + ((row['count'] as num?)?.toInt() ?? 0),
+    );
+    if (rows.isEmpty || totalCount == 0) {
       return isHealthy
           ? 'No healthy detections recorded for the selected period.'
           : 'No disease detections recorded for the selected period.';

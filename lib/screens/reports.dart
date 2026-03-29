@@ -18,21 +18,9 @@ import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import '../shared/total_users_card.dart' show resolveStorageImageUrl;
 import 'disease_map_widget.dart';
+import '../shared/report_disease_catalog.dart';
 
 // picker moved to lib/shared/date_range_picker.dart
-
-/// True if this disease should be hidden everywhere (dermatitis, pityriasis rosea).
-bool _isExcludedDisease(String name) {
-  if (name.isEmpty) return false;
-  final n = name
-      .toLowerCase()
-      .replaceAll(RegExp(r'[_\-]+'), ' ')
-      .replaceAll(RegExp(r'\s+'), ' ')
-      .trim();
-  return n.contains('dermatitis') ||
-      n.contains('dermatatis') ||
-      n.contains('pityriasis');
-}
 
 class Reports extends StatefulWidget {
   final VoidCallback? onGoToUsers;
@@ -63,6 +51,7 @@ class _ReportsState extends State<Reports> {
 
   List<Map<String, dynamic>> _reportsTrend = [];
   List<Map<String, dynamic>> _diseaseStats = [];
+  List<Map<String, dynamic>> _diseaseLocationSources = [];
 
   // SLA summary cached for display in KPI card (string like "85%")
   String? _slaWithin48h;
@@ -276,8 +265,7 @@ class _ReportsState extends State<Reports> {
   // Get available cities from Davao del Norte locations (all LGUs shown even with no data)
   Future<List<String>> _getAvailableCities() async {
     try {
-      final cities =
-          await ScanRequestsService.getDavaoDelNorteCityNames();
+      final cities = await ScanRequestsService.getDavaoDelNorteCityNames();
       return ['All', ...cities];
     } catch (e) {
       return ['All'];
@@ -332,6 +320,7 @@ class _ReportsState extends State<Reports> {
 
     // Aggregate disease data
     final Map<String, int> diseaseCounts = {};
+    int healthyCount = 0;
 
     for (final request in completed) {
       // ONLY use expert-validated disease summary (skip reports without expert validation)
@@ -345,10 +334,11 @@ class _ReportsState extends State<Reports> {
 
       // Collect unique disease types in this report (each report counts as 1 per disease type)
       final Set<String> diseasesInReport = {};
+      bool hasHealthy = false;
 
       if (diseaseSummary.isEmpty) {
         // If no diseases, count as healthy
-        diseasesInReport.add('Healthy');
+        hasHealthy = true;
       } else {
         for (final disease in diseaseSummary) {
           String diseaseName = '';
@@ -366,20 +356,24 @@ class _ReportsState extends State<Reports> {
 
           if (diseaseName.isEmpty) continue;
 
-          final lowerName = diseaseName.toLowerCase();
-          if (lowerName.contains('tip burn') || lowerName.contains('unknown')) {
+          final normalized = normalizeReportDiseaseName(diseaseName);
+          if (normalized == 'healthy') {
+            hasHealthy = true;
+            continue;
+          }
+          if (isIgnoredReportDisease(normalized) ||
+              isExcludedReportDisease(normalized)) {
             continue;
           }
           // Exclude dermatitis and pityriasis rosea — do not show anywhere
-          if (lowerName.contains('dermatitis') ||
-              lowerName.contains('dermatatis') ||
-              lowerName.contains('pityriasis')) {
-            continue;
-          }
 
           // Add disease type to set (each report contributes 1 per disease type)
-          diseasesInReport.add(diseaseName);
+          diseasesInReport.add(normalized);
         }
+      }
+
+      if (hasHealthy) {
+        healthyCount++;
       }
 
       // Count each disease type once per report
@@ -391,25 +385,40 @@ class _ReportsState extends State<Reports> {
     // Convert to list format with percentages
     // Calculate total disease occurrences (sum of all disease counts)
     // Since a report can have multiple diseases, the sum can be > totalReports
-    final int totalDiseaseOccurrences = diseaseCounts.values.fold(
-      0,
-      (sum, count) => sum + count,
-    );
+    final int totalDiseaseOccurrences =
+        healthyCount +
+        diseaseCounts.values.fold(0, (sum, count) => sum + count);
 
     final List<Map<String, dynamic>> diseaseStats = [];
-    diseaseCounts.forEach((diseaseName, count) {
-      if (_isExcludedDisease(diseaseName)) return; // Do not show anywhere
+    final orderedDiseaseNames = orderedReportDiseaseKeys(
+      observed: diseaseCounts.keys,
+    );
+    for (final diseaseName in orderedDiseaseNames) {
+      final count = diseaseCounts[diseaseName] ?? 0;
       // Percentage is based on total disease occurrences, not total reports
       // This gives the proportion of each disease among all disease occurrences
       final percentage =
           totalDiseaseOccurrences > 0 ? count / totalDiseaseOccurrences : 0.0;
       diseaseStats.add({
-        'name': diseaseName,
+        'name': reportDiseaseDisplayName(diseaseName),
         'count': count,
         'percentage': percentage,
-        'type': diseaseName.toLowerCase() == 'healthy' ? 'healthy' : 'disease',
+        'type': 'disease',
       });
-    });
+    }
+
+    if (healthyCount > 0) {
+      final percentage =
+          totalDiseaseOccurrences > 0
+              ? healthyCount / totalDiseaseOccurrences
+              : 0.0;
+      diseaseStats.add({
+        'name': 'Healthy',
+        'count': healthyCount,
+        'percentage': percentage,
+        'type': 'healthy',
+      });
+    }
 
     // Sort by count (descending)
     diseaseStats.sort(
@@ -417,6 +426,131 @@ class _ReportsState extends State<Reports> {
     );
 
     return diseaseStats;
+  }
+
+  List<Map<String, dynamic>> _getDiseaseLocationSourcesForCity(
+    List<Map<String, dynamic>> cityFiltered,
+    String timeRange,
+  ) {
+    final filtered = ScanRequestsService.filterByTimeRange(
+      cityFiltered,
+      timeRange,
+    );
+    final completed =
+        filtered.where((r) => (r['status'] ?? '') == 'completed').toList();
+
+    final Map<String, int> diseaseCounts = {};
+    final Map<String, Map<String, int>> cityCountsByDisease = {};
+    final Map<String, Map<String, int>> barangayCountsByDisease = {};
+
+    for (final request in completed) {
+      final expertDiseaseSummary = request['expertDiseaseSummary'];
+      if (expertDiseaseSummary == null ||
+          expertDiseaseSummary is! List ||
+          expertDiseaseSummary.isEmpty) {
+        continue;
+      }
+
+      final city = (request['cityMunicipality'] ?? '').toString().trim();
+      final barangay = (request['barangay'] ?? '').toString().trim();
+      final cityLabel = city.isEmpty ? 'Unspecified City/Municipality' : city;
+      final barangayLabel = _formatBarangaySourceLabel(
+        barangay: barangay,
+        city: city,
+      );
+
+      final Set<String> diseasesInReport = {};
+
+      for (final disease in expertDiseaseSummary) {
+        String diseaseName = '';
+        if (disease is Map<String, dynamic>) {
+          diseaseName =
+              (disease['name'] ?? disease['label'] ?? disease['disease'] ?? '')
+                  .toString()
+                  .trim();
+        } else if (disease is String) {
+          diseaseName = disease.trim();
+        }
+
+        if (diseaseName.isEmpty) continue;
+
+        final normalized = normalizeReportDiseaseName(diseaseName);
+        if (normalized == 'healthy' ||
+            isIgnoredReportDisease(normalized) ||
+            isExcludedReportDisease(normalized)) {
+          continue;
+        }
+
+        diseasesInReport.add(normalized);
+      }
+
+      for (final diseaseName in diseasesInReport) {
+        diseaseCounts[diseaseName] = (diseaseCounts[diseaseName] ?? 0) + 1;
+        _incrementLocationSourceCount(
+          cityCountsByDisease,
+          diseaseName,
+          cityLabel,
+        );
+        _incrementLocationSourceCount(
+          barangayCountsByDisease,
+          diseaseName,
+          barangayLabel,
+        );
+      }
+    }
+
+    final orderedDiseaseNames = orderedReportDiseaseKeys(
+      observed: diseaseCounts.keys,
+    );
+
+    return orderedDiseaseNames.map((diseaseName) {
+      return {
+        'name': reportDiseaseDisplayName(diseaseName),
+        'count': diseaseCounts[diseaseName] ?? 0,
+        'cities': _sortedLocationSourceCounts(
+          cityCountsByDisease[diseaseName] ?? const <String, int>{},
+        ),
+        'barangays': _sortedLocationSourceCounts(
+          barangayCountsByDisease[diseaseName] ?? const <String, int>{},
+        ),
+      };
+    }).toList();
+  }
+
+  void _incrementLocationSourceCount(
+    Map<String, Map<String, int>> target,
+    String diseaseName,
+    String locationName,
+  ) {
+    final diseaseLocations = target.putIfAbsent(
+      diseaseName,
+      () => <String, int>{},
+    );
+    diseaseLocations[locationName] = (diseaseLocations[locationName] ?? 0) + 1;
+  }
+
+  String _formatBarangaySourceLabel({
+    required String barangay,
+    required String city,
+  }) {
+    final barangayLabel = barangay.isEmpty ? 'Unspecified Barangay' : barangay;
+    final cityLabel = city.isEmpty ? 'Unspecified City/Municipality' : city;
+    return '$barangayLabel ($cityLabel)';
+  }
+
+  List<Map<String, dynamic>> _sortedLocationSourceCounts(
+    Map<String, int> counts,
+  ) {
+    final entries =
+        counts.entries
+            .map((entry) => {'name': entry.key, 'count': entry.value})
+            .toList();
+    entries.sort((a, b) {
+      final countCompare = (b['count'] as int).compareTo(a['count'] as int);
+      if (countCompare != 0) return countCompare;
+      return (a['name'] as String).compareTo(b['name'] as String);
+    });
+    return entries;
   }
 
   bool _hasInitialized = false;
@@ -1024,6 +1158,10 @@ class _ReportsState extends State<Reports> {
         cityFiltered,
         _selectedTimeRange,
       );
+      final locationData = _getDiseaseLocationSourcesForCity(
+        cityFiltered,
+        _selectedTimeRange,
+      );
       // debug log removed
 
       // If no data, show a message
@@ -1038,10 +1176,12 @@ class _ReportsState extends State<Reports> {
                 'type': 'disease',
               },
             ];
+            _diseaseLocationSources = locationData;
           });
         } else {
           setState(() {
             _diseaseStats = diseaseData;
+            _diseaseLocationSources = locationData;
           });
         }
       }
@@ -1058,6 +1198,7 @@ class _ReportsState extends State<Reports> {
               'type': 'disease',
             },
           ];
+          _diseaseLocationSources = [];
         });
       }
     }
@@ -1627,7 +1768,6 @@ class _ReportsState extends State<Reports> {
                 ),
               ),
               const SizedBox(height: 24),
-
               // Charts Row
               RepaintBoundary(
                 child: Row(
@@ -1647,6 +1787,9 @@ class _ReportsState extends State<Reports> {
                   ],
                 ),
               ),
+              const SizedBox(height: 32),
+
+              RepaintBoundary(child: _buildDiseaseLocationSourcesCard()),
               const SizedBox(height: 32),
 
               // Disease Map Section
@@ -1772,6 +1915,371 @@ class _ReportsState extends State<Reports> {
       onTap: onTap,
       showWarning: showWarning,
     );
+  }
+
+  Widget _buildDiseaseLocationSourcesCard() {
+    return Card(
+      elevation: 4,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Disease Source Locations',
+              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              'City/Municipality and barangay origin of each disease for the selected report filters. Expand a disease to view the full breakdown.',
+              style: TextStyle(fontSize: 13, color: Colors.black54),
+            ),
+            const SizedBox(height: 20),
+            if (_diseaseLocationSources.isEmpty)
+              const Text(
+                'No location data available for the selected range.',
+                style: TextStyle(fontSize: 13, color: Colors.black54),
+              )
+            else
+              LayoutBuilder(
+                builder: (context, constraints) {
+                  if (_diseaseLocationSources.length < 2 ||
+                      constraints.maxWidth < 1000) {
+                    return _buildDiseaseLocationSourceColumn(
+                      _diseaseLocationSources,
+                    );
+                  }
+
+                  final splitIndex = (_diseaseLocationSources.length + 1) ~/ 2;
+                  final leftItems =
+                      _diseaseLocationSources.take(splitIndex).toList();
+                  final rightItems =
+                      _diseaseLocationSources.skip(splitIndex).toList();
+
+                  return Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(
+                        child: _buildDiseaseLocationSourceColumn(leftItems),
+                      ),
+                      const SizedBox(width: 16),
+                      Expanded(
+                        child: _buildDiseaseLocationSourceColumn(rightItems),
+                      ),
+                    ],
+                  );
+                },
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDiseaseLocationSourceColumn(List<Map<String, dynamic>> items) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: items.map(_buildDiseaseLocationSourceItem).toList(),
+    );
+  }
+
+  String _caseCountLabel(int count) =>
+      '$count ${count == 1 ? 'case' : 'cases'}';
+
+  Widget _buildDiseaseLocationSourceItem(Map<String, dynamic> item) {
+    final name = (item['name'] ?? 'Unknown Disease').toString();
+    final count = (item['count'] as num?)?.toInt() ?? 0;
+    final cities =
+        (item['cities'] as List<dynamic>? ?? const <dynamic>[])
+            .whereType<Map<String, dynamic>>()
+            .toList();
+    final barangays =
+        (item['barangays'] as List<dynamic>? ?? const <dynamic>[])
+            .whereType<Map<String, dynamic>>()
+            .toList();
+
+    final content =
+        count == 0
+            ? Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(
+                        child: Text(
+                          name,
+                          style: const TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      _buildLocationSourceCountBadge(count),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  const Text(
+                    'No cases in selected range',
+                    style: TextStyle(fontSize: 13, color: Colors.black54),
+                  ),
+                ],
+              ),
+            )
+            : Theme(
+              data: Theme.of(
+                context,
+              ).copyWith(dividerColor: Colors.transparent),
+              child: ExpansionTile(
+                tilePadding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 6,
+                ),
+                childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                backgroundColor: Colors.transparent,
+                collapsedBackgroundColor: Colors.transparent,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14),
+                  side: BorderSide.none,
+                ),
+                collapsedShape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14),
+                  side: BorderSide.none,
+                ),
+                title: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(
+                      child: Text(
+                        name,
+                        style: const TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    _buildLocationSourceCountBadge(count),
+                  ],
+                ),
+                subtitle: Padding(
+                  padding: const EdgeInsets.only(top: 8),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _buildLocationSourceSummaryLine(
+                        icon: Icons.location_city_outlined,
+                        label: 'Top city',
+                        value: _formatTopLocationSummary(cities),
+                      ),
+                      const SizedBox(height: 4),
+                      _buildLocationSourceSummaryLine(
+                        icon: Icons.place_outlined,
+                        label: 'Top barangay',
+                        value: _formatTopLocationSummary(barangays),
+                      ),
+                    ],
+                  ),
+                ),
+                children: [
+                  const Divider(height: 1, color: Color(0xFFE2E8F0)),
+                  const SizedBox(height: 14),
+                  LayoutBuilder(
+                    builder: (context, constraints) {
+                      final cityGroup = _buildLocationSourceGroup(
+                        title: 'City/Municipality',
+                        items: cities,
+                        accentColor: const Color(0xFF1D4ED8),
+                        icon: Icons.location_city,
+                      );
+                      final barangayGroup = _buildLocationSourceGroup(
+                        title: 'Barangay',
+                        items: barangays,
+                        accentColor: const Color(0xFF0F766E),
+                        icon: Icons.place,
+                      );
+
+                      if (constraints.maxWidth >= 760) {
+                        return Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Expanded(child: cityGroup),
+                            const SizedBox(width: 12),
+                            Expanded(child: barangayGroup),
+                          ],
+                        );
+                      }
+
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          cityGroup,
+                          const SizedBox(height: 12),
+                          barangayGroup,
+                        ],
+                      );
+                    },
+                  ),
+                ],
+              ),
+            );
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8FAFC),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+      ),
+      child: content,
+    );
+  }
+
+  Widget _buildLocationSourceGroup({
+    required String title,
+    required List<Map<String, dynamic>> items,
+    required Color accentColor,
+    required IconData icon,
+  }) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(icon, size: 16, color: accentColor),
+              const SizedBox(width: 8),
+              Text(
+                title,
+                style: const TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          if (items.isEmpty)
+            const Text(
+              'No recorded locations',
+              style: TextStyle(fontSize: 12, color: Colors.black45),
+            )
+          else
+            ...List.generate(items.length, (index) {
+              final location = items[index];
+              final locationName =
+                  (location['name'] ?? 'Unknown Location').toString();
+              final count = (location['count'] as num?)?.toInt() ?? 0;
+
+              return Padding(
+                padding: EdgeInsets.only(
+                  bottom: index == items.length - 1 ? 0 : 8,
+                ),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 10,
+                  ),
+                  decoration: BoxDecoration(
+                    color: accentColor.withValues(alpha: 0.06),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          locationName,
+                          style: const TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.black87,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Text(
+                        _caseCountLabel(count),
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: accentColor,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            }),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildLocationSourceCountBadge(int count) {
+    final hasCases = count > 0;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      decoration: BoxDecoration(
+        color: hasCases ? const Color(0xFFE8F5E9) : const Color(0xFFF1F5F9),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(
+        _caseCountLabel(count),
+        style: TextStyle(
+          fontSize: 12,
+          fontWeight: FontWeight.w700,
+          color: hasCases ? const Color(0xFF2D7204) : Colors.blueGrey.shade600,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildLocationSourceSummaryLine({
+    required IconData icon,
+    required String label,
+    required String value,
+  }) {
+    return Row(
+      children: [
+        Icon(icon, size: 14, color: Colors.blueGrey.shade500),
+        const SizedBox(width: 6),
+        Text(
+          '$label:',
+          style: TextStyle(
+            fontSize: 12,
+            fontWeight: FontWeight.w600,
+            color: Colors.blueGrey.shade700,
+          ),
+        ),
+        const SizedBox(width: 6),
+        Expanded(
+          child: Text(
+            value,
+            style: const TextStyle(fontSize: 12, color: Colors.black87),
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+      ],
+    );
+  }
+
+  String _formatTopLocationSummary(List<Map<String, dynamic>> items) {
+    if (items.isEmpty) return 'No recorded locations';
+
+    final topLocation = items.first;
+    final name = (topLocation['name'] ?? 'Unknown Location').toString();
+    final count = (topLocation['count'] as num?)?.toInt() ?? 0;
+    return '$name - ${_caseCountLabel(count)}';
   }
 
   // Modal methods (moved from below to inside _ReportsState class)
@@ -4374,7 +4882,9 @@ class _ReportsListTableState extends State<ReportsListTable>
   String _searchQuery = '';
   String _selectedCity = 'All'; // City filter
   List<Map<String, dynamic>> _reports = [];
-  List<String> _availableCities = ['All']; // From Davao del Norte JSON (all LGUs)
+  List<String> _availableCities = [
+    'All',
+  ]; // From Davao del Norte JSON (all LGUs)
   bool _loading = true;
   String? _error;
   // Pagination and debounced search
@@ -5810,30 +6320,22 @@ class _DiseaseDistributionChartState extends State<DiseaseDistributionChart> {
               name = d;
             }
 
-            final lower = name.toLowerCase();
-            if (lower == 'healthy') {
+            final normalized = normalizeReportDiseaseName(name);
+            if (normalized == 'healthy') {
               hasHealthy = true;
               continue;
             }
-            if (lower.contains('tip burn') || lower.contains('unknown'))
+            if (isIgnoredReportDisease(normalized) ||
+                isExcludedReportDisease(normalized)) {
               continue;
+            }
 
             // Normalize disease name for consistent matching
             // - Replace underscores/hyphens with spaces
             // - Remove extra spaces
             // - Dermatitis and pityriasis rosea are excluded below
-            var normalized =
-                lower
-                    .replaceAll(RegExp(r'[_\-]+'), ' ')
-                    .replaceAll(RegExp(r'\s+'), ' ')
-                    .trim();
 
             // Exclude dermatitis and pityriasis rosea — do not show anywhere
-            if (normalized.contains('dermatitis') ||
-                normalized.contains('dermatatis') ||
-                normalized.contains('pityriasis')) {
-              continue;
-            }
 
             // Add disease type to set (each report contributes 1 per disease type)
             diseasesInReport.add(normalized);
@@ -5857,26 +6359,15 @@ class _DiseaseDistributionChartState extends State<DiseaseDistributionChart> {
             ..addAll(diseaseByDay.keys)
             ..addAll(healthyByDay.keys);
       final labels = keys.toList()..sort();
-      final totals =
-          diseaseDayCounts.entries
-              .map(
-                (e) => MapEntry(
-                  e.key,
-                  e.value.values.fold<int>(0, (s, v) => s + v),
-                ),
-              )
-              .toList()
-            ..sort((a, b) => b.value.compareTo(a.value));
-      // Show all diseases that appear in the range (no top-20 cutoff)
-      // Exclude dermatitis and pityriasis rosea from display
-      final top = totals
-          .map((e) => e.key)
-          .where((name) => !_isExcludedDisease(name))
-          .toList();
+      final orderedTrendDiseaseKeys = orderedReportDiseaseKeys(
+        observed: diseaseDayCounts.keys,
+      );
+      final top =
+          orderedTrendDiseaseKeys.map(reportDiseaseDisplayName).toList();
 
       final Map<String, List<double>> series = {};
-      for (final name in top) {
-        final perDay = diseaseDayCounts[name] ?? const <String, int>{};
+      for (final diseaseKey in orderedTrendDiseaseKeys) {
+        final perDay = diseaseDayCounts[diseaseKey] ?? const <String, int>{};
         final s = <double>[];
         for (final k in labels) {
           final dCount =
@@ -5888,7 +6379,7 @@ class _DiseaseDistributionChartState extends State<DiseaseDistributionChart> {
               allDiseasesCount + hCount; // Total scans = all diseases + healthy
           s.add(totalScans > 0 ? (dCount / totalScans) * 100.0 : 0.0);
         }
-        series[name] = s;
+        series[reportDiseaseDisplayName(diseaseKey)] = s;
       }
 
       // Healthy series (% healthy per day)
@@ -6226,64 +6717,61 @@ class _DiseaseDistributionChartState extends State<DiseaseDistributionChart> {
 
       // Collect unique disease types in this report (each report counts as 1 per disease type)
       final Set<String> diseasesInReport = {};
+      bool hasHealthy = false;
 
       if (diseaseSummary.isEmpty) {
         // If no diseases, count as healthy
-        healthyCount += 1;
-        continue;
+        hasHealthy = true;
       }
 
       for (final d in diseaseSummary) {
         if (d is Map<String, dynamic>) {
           final String rawName =
               (d['name'] ?? d['label'] ?? d['disease'] ?? 'Unknown').toString();
-          final String normalized =
-              rawName.replaceAll(RegExp(r'[_\-]+'), ' ').trim().toLowerCase();
+          final String normalized = normalizeReportDiseaseName(rawName);
 
           // Route Healthy to dedicated panel, do not include in disease bars
           if (normalized == 'healthy') {
-            diseasesInReport.add('Healthy');
+            hasHealthy = true;
             continue;
           }
           // Do not display Unknown/Tip Burn in disease bars
-          if (normalized == 'unknown' ||
-              normalized == 'tip burn' ||
-              normalized == 'tipburn') {
+          if (isIgnoredReportDisease(normalized) ||
+              isExcludedReportDisease(normalized)) {
             continue;
           }
           // Exclude dermatitis and pityriasis rosea — do not show anywhere
-          if (normalized.contains('dermatitis') ||
-              normalized.contains('dermatatis') ||
-              normalized.contains('pityriasis')) {
-            continue;
-          }
+
           // Add disease type to set (each report contributes 1 per disease type)
-          diseasesInReport.add(rawName);
+          diseasesInReport.add(normalized);
         }
+      }
+
+      if (hasHealthy) {
+        healthyCount += 1;
       }
 
       // Count each disease type once per report
       for (final diseaseName in diseasesInReport) {
-        if (diseaseName == 'Healthy') {
-          healthyCount += 1;
-        } else {
-          diseaseToCount[diseaseName] = (diseaseToCount[diseaseName] ?? 0) + 1;
-        }
+        diseaseToCount[diseaseName] = (diseaseToCount[diseaseName] ?? 0) + 1;
       }
     }
 
     final int total = diseaseToCount.values.fold(healthyCount, (a, b) => a + b);
     final List<Map<String, dynamic>> result = [];
 
-    diseaseToCount.forEach((name, count) {
-      if (_isExcludedDisease(name)) return; // Do not show anywhere
+    final orderedDiseaseNames = orderedReportDiseaseKeys(
+      observed: diseaseToCount.keys,
+    );
+    for (final name in orderedDiseaseNames) {
+      final count = diseaseToCount[name] ?? 0;
       result.add({
         'name': _getDiseaseDisplayName(name),
         'count': count,
         'percentage': total == 0 ? 0.0 : count / total,
         'type': 'disease',
       });
-    });
+    }
     if (healthyCount > 0) {
       result.add({
         'name': 'Healthy',
@@ -6299,70 +6787,7 @@ class _DiseaseDistributionChartState extends State<DiseaseDistributionChart> {
 
   /// Normalizes disease names to their display names
   String _getDiseaseDisplayName(String disease) {
-    // Normalize common separators and whitespace
-    final normalized =
-        disease
-            .toLowerCase()
-            .replaceAll(RegExp(r'[_\-]+'), ' ')
-            .replaceAll(RegExp(r'\s+'), ' ')
-            .trim();
-
-    // Map model labels and variations to display names
-    switch (normalized) {
-      case 'healthy':
-        return 'Healthy';
-
-      case 'bacterial erysipelas':
-      case 'infected bacterial erysipelas':
-        return 'Bacterial Erysipelas';
-
-      case 'greasy pig disease':
-      case 'infected bacterial greasy':
-      case 'bacterial greasy':
-        return 'greasy pig disease';
-
-      case 'sunburn':
-      case 'infected environmental sunburn':
-      case 'environmental sunburn':
-        return 'sunburn';
-
-      case 'ringworm':
-      case 'infected fungal ringworm':
-      case 'fungal ringworm':
-        return 'ringworm';
-
-      case 'mange':
-      case 'infected parasitic mange':
-      case 'parasitic mange':
-        return 'mange';
-
-      case 'foot and mouth disease':
-      case 'foot-and-mouth disease':
-      case 'infected viral foot and mouth':
-      case 'infected viral foot and mouth disease':
-        return 'foot and mouth disease';
-
-      case 'swine pox':
-      case 'swinepox':
-        return 'swine pox';
-
-      case 'unknown':
-      case 'tip burn':
-      case 'tip_burn':
-        return 'Unknown';
-
-      default:
-        // Capitalize first letter of each word for unknown diseases
-        return disease
-            .split(' ')
-            .map(
-              (word) =>
-                  word.isEmpty
-                      ? ''
-                      : word[0].toUpperCase() + word.substring(1).toLowerCase(),
-            )
-            .join(' ');
-    }
+    return reportDiseaseDisplayName(disease);
   }
 
   Color _getDiseaseColor(String disease) {
@@ -6632,6 +7057,51 @@ class _DiseaseDistributionChartState extends State<DiseaseDistributionChart> {
     );
   }
 
+  String _caseCountLabel(int count) =>
+      '$count ${count == 1 ? 'case' : 'cases'}';
+
+  String _distributionTooltipMessage(Map<String, dynamic> item) {
+    final name = (item['name'] ?? 'Unknown').toString();
+    final count = (item['count'] as num?)?.toInt() ?? 0;
+    final percentage = ((item['percentage'] as num?)?.toDouble() ?? 0.0) * 100;
+    return '$name\n${_caseCountLabel(count)}\n${percentage.toStringAsFixed(1)}%';
+  }
+
+  Widget _buildDistributionTooltip({
+    required Map<String, dynamic> item,
+    required Widget child,
+  }) {
+    return Tooltip(
+      message: _distributionTooltipMessage(item),
+      preferBelow: false,
+      waitDuration: const Duration(milliseconds: 180),
+      decoration: BoxDecoration(
+        color: Colors.blueGrey,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      textStyle: const TextStyle(color: Colors.white, height: 1.4),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      child: child,
+    );
+  }
+
+  MouseCursor _diseaseBarMouseCursor(
+    BarTouchResponse? touchResponse,
+    List<Map<String, dynamic>> items,
+  ) {
+    final spot = touchResponse?.spot;
+    if (spot == null) {
+      return SystemMouseCursors.basic;
+    }
+
+    final groupIndex = spot.touchedBarGroupIndex;
+    if (groupIndex < 0 || groupIndex >= items.length) {
+      return SystemMouseCursors.basic;
+    }
+
+    return SystemMouseCursors.click;
+  }
+
   @override
   Widget build(BuildContext context) {
     // Build-scoped immutable lists using live data when available
@@ -6787,7 +7257,7 @@ class _DiseaseDistributionChartState extends State<DiseaseDistributionChart> {
                                       ),
                                       const Spacer(),
                                       Text(
-                                        'Total: ${diseaseData.isEmpty ? 0 : diseaseData.fold<int>(0, (sum, item) => sum + (item['count'] as int))} cases',
+                                        'Total: ${_caseCountLabel(diseaseData.isEmpty ? 0 : diseaseData.fold<int>(0, (sum, item) => sum + (item['count'] as int)))}',
                                         style: TextStyle(
                                           fontSize: 14,
                                           color: Colors.grey[600],
@@ -6877,6 +7347,12 @@ class _DiseaseDistributionChartState extends State<DiseaseDistributionChart> {
                                                         100.0, // Use fixed 100% scale for consistent comparison
                                                     barTouchData: BarTouchData(
                                                       enabled: true,
+                                                      mouseCursorResolver:
+                                                          (event, response) =>
+                                                              _diseaseBarMouseCursor(
+                                                                response,
+                                                                sortedDiseases,
+                                                              ),
                                                       touchTooltipData: BarTouchTooltipData(
                                                         tooltipBgColor:
                                                             Colors.blueGrey,
@@ -6897,7 +7373,9 @@ class _DiseaseDistributionChartState extends State<DiseaseDistributionChart> {
                                                           final disease =
                                                               sortedDiseases[groupIndex];
                                                           return BarTooltipItem(
-                                                            '${disease['name']}\n${disease['count']} cases\n${(disease['percentage'] * 100).toStringAsFixed(1)}%',
+                                                            _distributionTooltipMessage(
+                                                              disease,
+                                                            ),
                                                             const TextStyle(
                                                               color:
                                                                   Colors.white,
@@ -6958,36 +7436,39 @@ class _DiseaseDistributionChartState extends State<DiseaseDistributionChart> {
                                                                   const EdgeInsets.only(
                                                                     top: 8.0,
                                                                   ),
-                                                              child: Container(
-                                                                padding:
-                                                                    const EdgeInsets.symmetric(
-                                                                      horizontal:
-                                                                          8,
-                                                                      vertical:
-                                                                          2,
-                                                                    ),
-                                                                decoration: BoxDecoration(
-                                                                  color: _getDiseaseColor(
-                                                                    disease['name'],
-                                                                  ).withOpacity(
-                                                                    0.1,
-                                                                  ),
-                                                                  borderRadius:
-                                                                      BorderRadius.circular(
-                                                                        12,
+                                                              child: _buildDistributionTooltip(
+                                                                item: disease,
+                                                                child: Container(
+                                                                  padding:
+                                                                      const EdgeInsets.symmetric(
+                                                                        horizontal:
+                                                                            8,
+                                                                        vertical:
+                                                                            2,
                                                                       ),
-                                                                ),
-                                                                child: Text(
-                                                                  '${(disease['percentage'] * 100).toStringAsFixed(1)}%',
-                                                                  style: TextStyle(
+                                                                  decoration: BoxDecoration(
                                                                     color: _getDiseaseColor(
                                                                       disease['name'],
+                                                                    ).withOpacity(
+                                                                      0.1,
                                                                     ),
-                                                                    fontWeight:
-                                                                        FontWeight
-                                                                            .w500,
-                                                                    fontSize:
-                                                                        12,
+                                                                    borderRadius:
+                                                                        BorderRadius.circular(
+                                                                          12,
+                                                                        ),
+                                                                  ),
+                                                                  child: Text(
+                                                                    '${(disease['percentage'] * 100).toStringAsFixed(1)}%',
+                                                                    style: TextStyle(
+                                                                      color: _getDiseaseColor(
+                                                                        disease['name'],
+                                                                      ),
+                                                                      fontWeight:
+                                                                          FontWeight
+                                                                              .w500,
+                                                                      fontSize:
+                                                                          12,
+                                                                    ),
                                                                   ),
                                                                 ),
                                                               ),
@@ -7144,7 +7625,7 @@ class _DiseaseDistributionChartState extends State<DiseaseDistributionChart> {
                                       ),
                                       const Spacer(),
                                       Text(
-                                        'Total: ${healthyData.isEmpty ? 0 : healthyData.fold<int>(0, (sum, item) => sum + (item['count'] as int))} cases',
+                                        'Total: ${_caseCountLabel(healthyData.isEmpty ? 0 : healthyData.fold<int>(0, (sum, item) => sum + (item['count'] as int)))}',
                                         style: TextStyle(
                                           fontSize: 14,
                                           color: Colors.grey[600],
@@ -7194,7 +7675,9 @@ class _DiseaseDistributionChartState extends State<DiseaseDistributionChart> {
                                                       final disease =
                                                           healthyData[groupIndex];
                                                       return BarTooltipItem(
-                                                        '${disease['name']}\n${disease['count']} cases\n${(disease['percentage'] * 100).toStringAsFixed(1)}%',
+                                                        _distributionTooltipMessage(
+                                                          disease,
+                                                        ),
                                                         const TextStyle(
                                                           color: Colors.white,
                                                         ),
@@ -7250,36 +7733,39 @@ class _DiseaseDistributionChartState extends State<DiseaseDistributionChart> {
                                                               const SizedBox(
                                                                 height: 6,
                                                               ),
-                                                              Container(
-                                                                padding:
-                                                                    const EdgeInsets.symmetric(
-                                                                      horizontal:
-                                                                          8,
-                                                                      vertical:
-                                                                          2,
-                                                                    ),
-                                                                decoration: BoxDecoration(
-                                                                  color: _getDiseaseColor(
-                                                                    disease['name'],
-                                                                  ).withOpacity(
-                                                                    0.1,
-                                                                  ),
-                                                                  borderRadius:
-                                                                      BorderRadius.circular(
-                                                                        12,
+                                                              _buildDistributionTooltip(
+                                                                item: disease,
+                                                                child: Container(
+                                                                  padding:
+                                                                      const EdgeInsets.symmetric(
+                                                                        horizontal:
+                                                                            8,
+                                                                        vertical:
+                                                                            2,
                                                                       ),
-                                                                ),
-                                                                child: Text(
-                                                                  '${(disease['percentage'] * 100).toStringAsFixed(1)}%',
-                                                                  style: TextStyle(
+                                                                  decoration: BoxDecoration(
                                                                     color: _getDiseaseColor(
                                                                       disease['name'],
+                                                                    ).withOpacity(
+                                                                      0.1,
                                                                     ),
-                                                                    fontWeight:
-                                                                        FontWeight
-                                                                            .w500,
-                                                                    fontSize:
-                                                                        12,
+                                                                    borderRadius:
+                                                                        BorderRadius.circular(
+                                                                          12,
+                                                                        ),
+                                                                  ),
+                                                                  child: Text(
+                                                                    '${(disease['percentage'] * 100).toStringAsFixed(1)}%',
+                                                                    style: TextStyle(
+                                                                      color: _getDiseaseColor(
+                                                                        disease['name'],
+                                                                      ),
+                                                                      fontWeight:
+                                                                          FontWeight
+                                                                              .w500,
+                                                                      fontSize:
+                                                                          12,
+                                                                    ),
                                                                   ),
                                                                 ),
                                                               ),
@@ -7458,141 +7944,552 @@ class _FarmerDetailsDialogState extends State<_FarmerDetailsDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final size = MediaQuery.of(context).size;
+    final headerStatus =
+        _loading ? 'Loading...' : _farmerCountLabel(_farmers.length);
+
     return Dialog(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      child: Container(
-        width: MediaQuery.of(context).size.width * 0.9,
-        height: MediaQuery.of(context).size.height * 0.7,
-        padding: const EdgeInsets.all(24),
+      insetPadding: const EdgeInsets.symmetric(horizontal: 28, vertical: 24),
+      clipBehavior: Clip.antiAlias,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+      child: ConstrainedBox(
+        constraints: BoxConstraints(
+          maxWidth: 920,
+          maxHeight: size.height * 0.78,
+        ),
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Expanded(
-                  child: Text(
-                    'Farmers with ${widget.diseaseName}',
-                    style: const TextStyle(
-                      fontSize: 20,
-                      fontWeight: FontWeight.bold,
+            Container(
+              padding: const EdgeInsets.fromLTRB(24, 22, 18, 20),
+              decoration: const BoxDecoration(
+                color: Color(0xFFF8FAFC),
+                border: Border(bottom: BorderSide(color: Color(0xFFE2E8F0))),
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    width: 56,
+                    height: 56,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFE8F5E9),
+                      borderRadius: BorderRadius.circular(18),
+                    ),
+                    child: const Icon(
+                      Icons.groups_rounded,
+                      size: 30,
+                      color: Color(0xFF2D7204),
                     ),
                   ),
-                ),
-                IconButton(
-                  icon: const Icon(Icons.close),
-                  onPressed: () => Navigator.of(context).pop(),
-                ),
-              ],
-            ),
-            const SizedBox(height: 16),
-            if (_loading)
-              const Expanded(child: Center(child: CircularProgressIndicator()))
-            else if (_farmers.isEmpty)
-              Expanded(
-                child: Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(
-                        Icons.people_outline,
-                        size: 64,
-                        color: Colors.grey[400],
-                      ),
-                      const SizedBox(height: 16),
-                      Text(
-                        'No farmers found',
-                        style: TextStyle(fontSize: 16, color: Colors.grey[600]),
-                      ),
-                    ],
-                  ),
-                ),
-              )
-            else
-              Expanded(
-                child: ListView.builder(
-                  physics: const AlwaysScrollableScrollPhysics(),
-                  shrinkWrap: true,
-                  itemCount: _farmers.length,
-                  padding: const EdgeInsets.only(bottom: 8),
-                  itemBuilder: (context, index) {
-                    final farmer = _farmers[index];
-                    final city = (farmer['cityMunicipality'] ?? '').toString();
-                    final province = (farmer['province'] ?? '').toString();
-                    final barangay = (farmer['barangay'] ?? '').toString();
-
-                    String address = '';
-                    if (barangay.isNotEmpty) address += barangay;
-                    if (city.isNotEmpty) {
-                      if (address.isNotEmpty) address += ', ';
-                      address += city;
-                    }
-                    if (province.isNotEmpty) {
-                      if (address.isNotEmpty) address += ', ';
-                      address += province;
-                    }
-                    if (address.isEmpty) address = 'Address not available';
-
-                    return Card(
-                      margin: const EdgeInsets.only(bottom: 12),
-                      elevation: 2,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: ListTile(
-                        contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 16,
-                          vertical: 8,
-                        ),
-                        leading: CircleAvatar(
-                          backgroundColor: Colors.green[100],
-                          child: Icon(Icons.person, color: Colors.green[700]),
-                        ),
-                        title: Text(
-                          farmer['userName'] ?? 'Unknown',
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Farmers with ${widget.diseaseName}',
                           style: const TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 16,
+                            fontSize: 22,
+                            fontWeight: FontWeight.w700,
                           ),
                         ),
-                        subtitle: Padding(
-                          padding: const EdgeInsets.only(top: 4),
-                          child: Row(
-                            children: [
-                              Icon(
-                                Icons.location_on,
-                                size: 16,
-                                color: Colors.grey[600],
-                              ),
-                              const SizedBox(width: 4),
-                              Expanded(
-                                child: Text(
-                                  address,
+                        const SizedBox(height: 4),
+                        Text(
+                          'Affected farmer records linked to this disease.',
+                          style: TextStyle(
+                            fontSize: 13,
+                            color: Colors.blueGrey.shade600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 7,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(999),
+                      border: Border.all(color: const Color(0xFFD6E4D4)),
+                    ),
+                    child: Text(
+                      headerStatus,
+                      style: const TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                        color: Color(0xFF2D7204),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  IconButton(
+                    style: IconButton.styleFrom(
+                      backgroundColor: Colors.white,
+                      foregroundColor: Colors.blueGrey,
+                      side: const BorderSide(color: Color(0xFFE2E8F0)),
+                    ),
+                    icon: const Icon(Icons.close),
+                    onPressed: () => Navigator.of(context).pop(),
+                  ),
+                ],
+              ),
+            ),
+            Expanded(
+              child: Container(
+                width: double.infinity,
+                color: const Color(0xFFF8FAFC),
+                padding: const EdgeInsets.fromLTRB(24, 20, 24, 16),
+                child:
+                    _loading
+                        ? _buildFarmerDialogState(
+                          icon: Icons.hourglass_top_rounded,
+                          title: 'Loading farmer records',
+                          message:
+                              'Please wait while we gather the affected farmer list.',
+                          loading: true,
+                        )
+                        : _farmers.isEmpty
+                        ? _buildFarmerDialogState(
+                          icon: Icons.people_outline_rounded,
+                          title: 'No farmers found',
+                          message:
+                              'There are no farmer records available for this disease.',
+                        )
+                        : Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Text(
+                                  'Affected Farmers',
                                   style: TextStyle(
-                                    fontSize: 14,
-                                    color: Colors.grey[700],
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w700,
+                                    color: Colors.blueGrey.shade700,
+                                    letterSpacing: 0.2,
                                   ),
                                 ),
-                              ),
-                            ],
-                          ),
+                                const Spacer(),
+                                Text(
+                                  'Grouped by municipality/city and barangay',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: Colors.blueGrey.shade500,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 14),
+                            Expanded(child: _buildGroupedFarmerList()),
+                          ],
                         ),
-                      ),
-                    );
-                  },
-                ),
               ),
-            const SizedBox(height: 8),
-            Text(
-              'Total: ${_farmers.length} farmer${_farmers.length != 1 ? 's' : ''}',
-              style: TextStyle(
-                fontSize: 14,
-                color: Colors.grey[600],
-                fontWeight: FontWeight.w500,
+            ),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+              decoration: const BoxDecoration(
+                color: Colors.white,
+                border: Border(top: BorderSide(color: Color(0xFFE2E8F0))),
+              ),
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.people_alt_outlined,
+                    size: 18,
+                    color: Colors.blueGrey,
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    'Total records: ${_farmerCountLabel(_farmers.length)}',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.blueGrey.shade700,
+                    ),
+                  ),
+                ],
               ),
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  String _farmerCountLabel(int count) =>
+      '$count farmer${count == 1 ? '' : 's'}';
+
+  String _locationGroupValue(
+    Map<String, dynamic> farmer,
+    String key, {
+    required String fallback,
+  }) {
+    final value = (farmer[key] ?? '').toString().trim();
+    return value.isEmpty ? fallback : value;
+  }
+
+  Widget _buildFarmerDialogState({
+    required IconData icon,
+    required String title,
+    required String message,
+    bool loading = false,
+  }) {
+    return Center(
+      child: Container(
+        constraints: const BoxConstraints(maxWidth: 360),
+        padding: const EdgeInsets.all(24),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: const Color(0xFFE2E8F0)),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (loading)
+              const SizedBox(
+                width: 32,
+                height: 32,
+                child: CircularProgressIndicator(strokeWidth: 3),
+              )
+            else
+              Container(
+                width: 64,
+                height: 64,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF1F5F9),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Icon(icon, size: 32, color: Colors.blueGrey),
+              ),
+            const SizedBox(height: 16),
+            Text(
+              title,
+              style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              message,
+              style: TextStyle(fontSize: 13, color: Colors.blueGrey.shade600),
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildGroupedFarmerList() {
+    final groupedFarmers = _groupFarmersByLocation();
+
+    return Scrollbar(
+      thumbVisibility: true,
+      child: ListView.separated(
+        physics: const AlwaysScrollableScrollPhysics(),
+        itemCount: groupedFarmers.length,
+        padding: const EdgeInsets.only(right: 4),
+        separatorBuilder: (_, __) => const SizedBox(height: 14),
+        itemBuilder: (context, index) {
+          return _buildCityFarmerGroup(groupedFarmers[index]);
+        },
+      ),
+    );
+  }
+
+  List<Map<String, dynamic>> _groupFarmersByLocation() {
+    final Map<String, Map<String, List<Map<String, dynamic>>>> grouped = {};
+    final Map<String, String> provinceByCity = {};
+
+    for (final farmer in _farmers) {
+      final city = _locationGroupValue(
+        farmer,
+        'cityMunicipality',
+        fallback: 'Unspecified City/Municipality',
+      );
+      final barangay = _locationGroupValue(
+        farmer,
+        'barangay',
+        fallback: 'Unspecified Barangay',
+      );
+      final province = _locationGroupValue(
+        farmer,
+        'province',
+        fallback: 'Province not provided',
+      );
+
+      provinceByCity.putIfAbsent(city, () => province);
+      final cityGroup = grouped.putIfAbsent(
+        city,
+        () => <String, List<Map<String, dynamic>>>{},
+      );
+      cityGroup
+          .putIfAbsent(barangay, () => <Map<String, dynamic>>[])
+          .add(farmer);
+    }
+
+    final citySections =
+        grouped.entries.map((cityEntry) {
+            final barangaySections =
+                cityEntry.value.entries.map((barangayEntry) {
+                    final farmers = [...barangayEntry.value]..sort((a, b) {
+                      final aName =
+                          (a['userName'] ?? 'Unknown Farmer').toString().trim();
+                      final bName =
+                          (b['userName'] ?? 'Unknown Farmer').toString().trim();
+                      return aName.toLowerCase().compareTo(bName.toLowerCase());
+                    });
+
+                    return {
+                      'barangay': barangayEntry.key,
+                      'count': farmers.length,
+                      'farmers': farmers,
+                    };
+                  }).toList()
+                  ..sort((a, b) {
+                    final aName = (a['barangay'] ?? '').toString();
+                    final bName = (b['barangay'] ?? '').toString();
+                    return aName.toLowerCase().compareTo(bName.toLowerCase());
+                  });
+
+            final totalCount = barangaySections.fold<int>(
+              0,
+              (total, section) =>
+                  total + ((section['count'] as num?)?.toInt() ?? 0),
+            );
+
+            return {
+              'city': cityEntry.key,
+              'province':
+                  provinceByCity[cityEntry.key] ?? 'Province not provided',
+              'count': totalCount,
+              'barangays': barangaySections,
+            };
+          }).toList()
+          ..sort((a, b) {
+            final aName = (a['city'] ?? '').toString();
+            final bName = (b['city'] ?? '').toString();
+            return aName.toLowerCase().compareTo(bName.toLowerCase());
+          });
+
+    return citySections;
+  }
+
+  Widget _buildCityFarmerGroup(Map<String, dynamic> group) {
+    final city = (group['city'] ?? 'Unspecified City/Municipality').toString();
+    final province = (group['province'] ?? 'Province not provided').toString();
+    final count = (group['count'] as num?)?.toInt() ?? 0;
+    final barangays =
+        (group['barangays'] as List<dynamic>? ?? const <dynamic>[])
+            .whereType<Map<String, dynamic>>()
+            .toList();
+
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF0F172A).withValues(alpha: 0.04),
+            blurRadius: 16,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                width: 48,
+                height: 48,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFEFF6FF),
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: const Icon(
+                  Icons.location_city_rounded,
+                  color: Color(0xFF1D4ED8),
+                  size: 26,
+                ),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      city,
+                      style: const TextStyle(
+                        fontSize: 17,
+                        fontWeight: FontWeight.w700,
+                        color: Color(0xFF0F172A),
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Municipality/City${province == 'Province not provided' ? '' : ' • $province'}',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.blueGrey.shade600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 12),
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 5,
+                ),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFE8F5E9),
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: Text(
+                  _farmerCountLabel(count),
+                  style: const TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    color: Color(0xFF2D7204),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          ...List.generate(barangays.length, (index) {
+            final barangayGroup = barangays[index];
+            return Padding(
+              padding: EdgeInsets.only(
+                bottom: index == barangays.length - 1 ? 0 : 12,
+              ),
+              child: _buildBarangayFarmerGroup(barangayGroup),
+            );
+          }),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildBarangayFarmerGroup(Map<String, dynamic> group) {
+    final barangay = (group['barangay'] ?? 'Unspecified Barangay').toString();
+    final count = (group['count'] as num?)?.toInt() ?? 0;
+    final farmers =
+        (group['farmers'] as List<dynamic>? ?? const <dynamic>[])
+            .whereType<Map<String, dynamic>>()
+            .toList();
+
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8FAFC),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFECFDF5),
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: const Text(
+                  'Barangay',
+                  style: TextStyle(
+                    fontSize: 10,
+                    fontWeight: FontWeight.w700,
+                    color: Color(0xFF0F766E),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  barangay,
+                  style: const TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w700,
+                    color: Color(0xFF0F172A),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Text(
+                _farmerCountLabel(count),
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.blueGrey.shade700,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          ...List.generate(farmers.length, (index) {
+            final farmer = farmers[index];
+            final name =
+                (farmer['userName'] ?? 'Unknown Farmer').toString().trim();
+
+            return Padding(
+              padding: EdgeInsets.only(
+                bottom: index == farmers.length - 1 ? 0 : 8,
+              ),
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 10,
+                ),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: const Color(0xFFE2E8F0)),
+                ),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 28,
+                      height: 28,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFE8F5E9),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: const Icon(
+                        Icons.person_outline_rounded,
+                        size: 16,
+                        color: Color(0xFF2D7204),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        name.isEmpty ? 'Unknown Farmer' : name,
+                        style: const TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: Color(0xFF0F172A),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          }),
+        ],
       ),
     );
   }

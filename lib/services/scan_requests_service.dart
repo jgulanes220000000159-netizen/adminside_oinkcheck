@@ -3,21 +3,24 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/services.dart' show rootBundle;
+import '../shared/report_disease_catalog.dart';
 
 class ScanRequestsService {
   /// Returns all city/municipality names from Davao del Norte locations JSON.
   /// Use this for reports and PDF city filters so every LGU is shown even with no data.
   static Future<List<String>> getDavaoDelNorteCityNames() async {
     try {
-      final String jsonString = await rootBundle
-          .loadString('assets/davao_del_norte_locations.json');
+      final String jsonString = await rootBundle.loadString(
+        'assets/davao_del_norte_locations.json',
+      );
       final Map<String, dynamic> map =
           jsonDecode(jsonString) as Map<String, dynamic>;
       final List<dynamic> citiesList = map['cities'] as List<dynamic>? ?? [];
-      final List<String> names = citiesList
-          .map((e) => (e as Map<String, dynamic>)['name'] as String? ?? '')
-          .where((s) => s.isNotEmpty)
-          .toList();
+      final List<String> names =
+          citiesList
+              .map((e) => (e as Map<String, dynamic>)['name'] as String? ?? '')
+              .where((s) => s.isNotEmpty)
+              .toList();
       names.sort();
       return names;
     } catch (e) {
@@ -161,19 +164,23 @@ class ScanRequestsService {
             break;
           case 'All Time':
             // For All Time, calculate from completed reports
-            final completedReports = scanRequests
-                .where((r) => (r['status'] ?? '').toString() == 'completed')
-                .toList();
+            final completedReports =
+                scanRequests
+                    .where((r) => (r['status'] ?? '').toString() == 'completed')
+                    .toList();
             if (completedReports.isNotEmpty) {
               DateTime? earliestDate;
               DateTime? latestDate;
               for (final r in completedReports) {
                 final createdAtRaw = r['createdAt'];
                 DateTime? createdAt;
-                if (createdAtRaw is Timestamp) createdAt = createdAtRaw.toDate();
-                if (createdAtRaw is String) createdAt = DateTime.tryParse(createdAtRaw);
+                if (createdAtRaw is Timestamp)
+                  createdAt = createdAtRaw.toDate();
+                if (createdAtRaw is String)
+                  createdAt = DateTime.tryParse(createdAtRaw);
                 if (createdAt != null) {
-                  if (earliestDate == null || createdAt.isBefore(earliestDate)) {
+                  if (earliestDate == null ||
+                      createdAt.isBefore(earliestDate)) {
                     earliestDate = createdAt;
                   }
                   if (latestDate == null || createdAt.isAfter(latestDate)) {
@@ -182,8 +189,16 @@ class ScanRequestsService {
                 }
               }
               if (earliestDate != null && latestDate != null) {
-                startInclusive = DateTime(earliestDate.year, earliestDate.month, earliestDate.day);
-                endExclusive = DateTime(latestDate.year, latestDate.month, latestDate.day).add(const Duration(days: 1));
+                startInclusive = DateTime(
+                  earliestDate.year,
+                  earliestDate.month,
+                  earliestDate.day,
+                );
+                endExclusive = DateTime(
+                  latestDate.year,
+                  latestDate.month,
+                  latestDate.day,
+                ).add(const Duration(days: 1));
               } else {
                 startInclusive = now.subtract(const Duration(days: 30));
                 endExclusive = now;
@@ -245,7 +260,7 @@ class ScanRequestsService {
 
       // Aggregate disease data - count reports, not boxes
       final Map<String, int> diseaseCounts = {};
-      int totalDiseaseOccurrences = 0; // Sum of all disease counts
+      int healthyCount = 0;
 
       for (final request in filteredRequests) {
         // ONLY use expert-validated disease summary (skip reports without expert validation)
@@ -259,10 +274,11 @@ class ScanRequestsService {
 
         // Collect unique disease types in this report (each report counts as 1 per disease type)
         final Set<String> diseasesInReport = {};
+        bool hasHealthy = false;
 
         if (diseaseSummary.isEmpty) {
           // If no diseases, count as healthy
-          diseasesInReport.add('Healthy');
+          hasHealthy = true;
         } else {
           for (final disease in diseaseSummary) {
             String diseaseName = 'Unknown';
@@ -280,55 +296,66 @@ class ScanRequestsService {
             if (diseaseName.isEmpty || diseaseName == 'Unknown') continue;
 
             // Skip Tip Burn as it's not a disease but a scanning feature
-            final lowerName = diseaseName.toLowerCase();
-            if (lowerName.contains('tip burn') ||
-                lowerName.contains('unknown')) {
+            final normalized = normalizeReportDiseaseName(diseaseName);
+            if (normalized == 'healthy') {
+              hasHealthy = true;
+              continue;
+            }
+            if (isIgnoredReportDisease(normalized) ||
+                isExcludedReportDisease(normalized)) {
               continue;
             }
             // Exclude dermatitis and pityriasis rosea — do not show anywhere
-            if (lowerName.contains('dermatitis') ||
-                lowerName.contains('dermatatis') ||
-                lowerName.contains('pityriasis')) {
-              continue;
-            }
 
             // Add disease type to set (each report contributes 1 per disease type)
-            diseasesInReport.add(diseaseName);
+            diseasesInReport.add(normalized);
           }
+        }
+
+        if (hasHealthy) {
+          healthyCount++;
         }
 
         // Count each disease type once per report
         for (final diseaseName in diseasesInReport) {
           diseaseCounts[diseaseName] = (diseaseCounts[diseaseName] ?? 0) + 1;
-          totalDiseaseOccurrences++; // Increment total occurrences
         }
       }
 
       // Convert to list format with percentages
+      final int totalDiseaseOccurrences =
+          healthyCount +
+          diseaseCounts.values.fold<int>(0, (sum, count) => sum + count);
       final List<Map<String, dynamic>> diseaseStats = [];
 
-      diseaseCounts.forEach((diseaseName, count) {
+      final orderedDiseaseNames = orderedReportDiseaseKeys(
+        observed: diseaseCounts.keys,
+      );
+      for (final diseaseName in orderedDiseaseNames) {
+        final count = diseaseCounts[diseaseName] ?? 0;
         // Exclude dermatitis and pityriasis rosea — do not show anywhere
-        final n = diseaseName
-            .toLowerCase()
-            .replaceAll(RegExp(r'[_\-]+'), ' ')
-            .replaceAll(RegExp(r'\s+'), ' ')
-            .trim();
-        if (n.contains('dermatitis') ||
-            n.contains('dermatatis') ||
-            n.contains('pityriasis')) {
-          return;
-        }
         final percentage =
             totalDiseaseOccurrences > 0 ? count / totalDiseaseOccurrences : 0.0;
         diseaseStats.add({
-          'name': diseaseName,
+          'name': reportDiseaseDisplayName(diseaseName),
           'count': count,
           'percentage': percentage,
-          'type':
-              diseaseName.toLowerCase() == 'healthy' ? 'healthy' : 'disease',
+          'type': 'disease',
         });
-      });
+      }
+
+      if (healthyCount > 0) {
+        final percentage =
+            totalDiseaseOccurrences > 0
+                ? healthyCount / totalDiseaseOccurrences
+                : 0.0;
+        diseaseStats.add({
+          'name': 'Healthy',
+          'count': healthyCount,
+          'percentage': percentage,
+          'type': 'healthy',
+        });
+      }
 
       // Do not inject dummy data; return only real disease stats
 
@@ -392,19 +419,23 @@ class ScanRequestsService {
             break;
           case 'All Time':
             // For All Time, calculate from completed reports
-            final completedReports = scanRequests
-                .where((r) => (r['status'] ?? '').toString() == 'completed')
-                .toList();
+            final completedReports =
+                scanRequests
+                    .where((r) => (r['status'] ?? '').toString() == 'completed')
+                    .toList();
             if (completedReports.isNotEmpty) {
               DateTime? earliestDate;
               DateTime? latestDate;
               for (final r in completedReports) {
                 final createdAtRaw = r['createdAt'];
                 DateTime? createdAt;
-                if (createdAtRaw is Timestamp) createdAt = createdAtRaw.toDate();
-                if (createdAtRaw is String) createdAt = DateTime.tryParse(createdAtRaw);
+                if (createdAtRaw is Timestamp)
+                  createdAt = createdAtRaw.toDate();
+                if (createdAtRaw is String)
+                  createdAt = DateTime.tryParse(createdAtRaw);
                 if (createdAt != null) {
-                  if (earliestDate == null || createdAt.isBefore(earliestDate)) {
+                  if (earliestDate == null ||
+                      createdAt.isBefore(earliestDate)) {
                     earliestDate = createdAt;
                   }
                   if (latestDate == null || createdAt.isAfter(latestDate)) {
@@ -413,8 +444,16 @@ class ScanRequestsService {
                 }
               }
               if (earliestDate != null && latestDate != null) {
-                startInclusive = DateTime(earliestDate.year, earliestDate.month, earliestDate.day);
-                endExclusive = DateTime(latestDate.year, latestDate.month, latestDate.day).add(const Duration(days: 1));
+                startInclusive = DateTime(
+                  earliestDate.year,
+                  earliestDate.month,
+                  earliestDate.day,
+                );
+                endExclusive = DateTime(
+                  latestDate.year,
+                  latestDate.month,
+                  latestDate.day,
+                ).add(const Duration(days: 1));
               } else {
                 startInclusive = now.subtract(const Duration(days: 30));
                 endExclusive = now;
@@ -574,9 +613,10 @@ class ScanRequestsService {
 
     // Handle 'All Time' specially - find range from first to last completed report
     if (timeRange == 'All Time') {
-      final completedReports = requests
-          .where((r) => (r['status'] ?? '').toString() == 'completed')
-          .toList();
+      final completedReports =
+          requests
+              .where((r) => (r['status'] ?? '').toString() == 'completed')
+              .toList();
       if (completedReports.isNotEmpty) {
         DateTime? earliestDate;
         DateTime? latestDate;
@@ -584,7 +624,8 @@ class ScanRequestsService {
           final createdAtRaw = r['createdAt'];
           DateTime? createdAt;
           if (createdAtRaw is Timestamp) createdAt = createdAtRaw.toDate();
-          if (createdAtRaw is String) createdAt = DateTime.tryParse(createdAtRaw);
+          if (createdAtRaw is String)
+            createdAt = DateTime.tryParse(createdAtRaw);
           if (createdAt != null) {
             if (earliestDate == null || createdAt.isBefore(earliestDate)) {
               earliestDate = createdAt;
@@ -595,8 +636,16 @@ class ScanRequestsService {
           }
         }
         if (earliestDate != null && latestDate != null) {
-          final startInclusive = DateTime(earliestDate.year, earliestDate.month, earliestDate.day);
-          final endExclusive = DateTime(latestDate.year, latestDate.month, latestDate.day).add(const Duration(days: 1));
+          final startInclusive = DateTime(
+            earliestDate.year,
+            earliestDate.month,
+            earliestDate.day,
+          );
+          final endExclusive = DateTime(
+            latestDate.year,
+            latestDate.month,
+            latestDate.day,
+          ).add(const Duration(days: 1));
           return requests.where((request) {
             final createdAt = request['createdAt'];
             if (createdAt == null) return false;
@@ -608,7 +657,8 @@ class ScanRequestsService {
             } else {
               return false;
             }
-            return !requestDate.isBefore(startInclusive) && requestDate.isBefore(endExclusive);
+            return !requestDate.isBefore(startInclusive) &&
+                requestDate.isBefore(endExclusive);
           }).toList();
         }
       }
@@ -698,7 +748,9 @@ class ScanRequestsService {
             final prevYear = now.month == 1 ? now.year - 1 : now.year;
             final monthStart = DateTime(prevYear, prevMonth, 1);
             final monthEnd = DateTime(now.year, now.month, 1);
-            isInRange = !requestDate.isBefore(monthStart) && requestDate.isBefore(monthEnd);
+            isInRange =
+                !requestDate.isBefore(monthStart) &&
+                requestDate.isBefore(monthEnd);
           } else {
             // For other ranges: include scans from startDate up to today
             // This includes today's scans in longer time ranges
@@ -846,19 +898,23 @@ class ScanRequestsService {
             break;
           case 'All Time':
             // For All Time, calculate from completed reports
-            final completedReports = scanRequests
-                .where((r) => (r['status'] ?? '').toString() == 'completed')
-                .toList();
+            final completedReports =
+                scanRequests
+                    .where((r) => (r['status'] ?? '').toString() == 'completed')
+                    .toList();
             if (completedReports.isNotEmpty) {
               DateTime? earliestDate;
               DateTime? latestDate;
               for (final r in completedReports) {
                 final createdAtRaw = r['createdAt'];
                 DateTime? createdAt;
-                if (createdAtRaw is Timestamp) createdAt = createdAtRaw.toDate();
-                if (createdAtRaw is String) createdAt = DateTime.tryParse(createdAtRaw);
+                if (createdAtRaw is Timestamp)
+                  createdAt = createdAtRaw.toDate();
+                if (createdAtRaw is String)
+                  createdAt = DateTime.tryParse(createdAtRaw);
                 if (createdAt != null) {
-                  if (earliestDate == null || createdAt.isBefore(earliestDate)) {
+                  if (earliestDate == null ||
+                      createdAt.isBefore(earliestDate)) {
                     earliestDate = createdAt;
                   }
                   if (latestDate == null || createdAt.isAfter(latestDate)) {
@@ -867,8 +923,16 @@ class ScanRequestsService {
                 }
               }
               if (earliestDate != null && latestDate != null) {
-                startInclusive = DateTime(earliestDate.year, earliestDate.month, earliestDate.day);
-                endExclusive = DateTime(latestDate.year, latestDate.month, latestDate.day).add(const Duration(days: 1));
+                startInclusive = DateTime(
+                  earliestDate.year,
+                  earliestDate.month,
+                  earliestDate.day,
+                );
+                endExclusive = DateTime(
+                  latestDate.year,
+                  latestDate.month,
+                  latestDate.day,
+                ).add(const Duration(days: 1));
               } else {
                 startInclusive = now.subtract(const Duration(days: 30));
                 endExclusive = now;
@@ -1067,9 +1131,10 @@ class ScanRequestsService {
           break;
         case 'All Time':
           // For All Time, calculate from completed reports in submittedInPeriod
-          final completedReports = submittedInPeriod
-              .where((r) => (r['status'] ?? '').toString() == 'completed')
-              .toList();
+          final completedReports =
+              submittedInPeriod
+                  .where((r) => (r['status'] ?? '').toString() == 'completed')
+                  .toList();
           if (completedReports.isNotEmpty) {
             DateTime? earliestDate;
             DateTime? latestDate;
@@ -1077,7 +1142,8 @@ class ScanRequestsService {
               final createdAtRaw = r['createdAt'];
               DateTime? createdAt;
               if (createdAtRaw is Timestamp) createdAt = createdAtRaw.toDate();
-              if (createdAtRaw is String) createdAt = DateTime.tryParse(createdAtRaw);
+              if (createdAtRaw is String)
+                createdAt = DateTime.tryParse(createdAtRaw);
               if (createdAt != null) {
                 if (earliestDate == null || createdAt.isBefore(earliestDate)) {
                   earliestDate = createdAt;
@@ -1088,8 +1154,16 @@ class ScanRequestsService {
               }
             }
             if (earliestDate != null && latestDate != null) {
-              periodStart = DateTime(earliestDate.year, earliestDate.month, earliestDate.day);
-              periodEnd = DateTime(latestDate.year, latestDate.month, latestDate.day).add(const Duration(days: 1));
+              periodStart = DateTime(
+                earliestDate.year,
+                earliestDate.month,
+                earliestDate.day,
+              );
+              periodEnd = DateTime(
+                latestDate.year,
+                latestDate.month,
+                latestDate.day,
+              ).add(const Duration(days: 1));
             } else {
               periodStart = now.subtract(const Duration(days: 30));
               periodEnd = now;

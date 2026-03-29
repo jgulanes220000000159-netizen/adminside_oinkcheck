@@ -5,7 +5,6 @@ import 'user_management.dart';
 import 'package:cloud_firestore/cloud_firestore.dart' as cf;
 import 'package:firebase_auth/firebase_auth.dart';
 import 'reports.dart';
-import '../models/user_store.dart';
 import '../shared/total_users_card.dart';
 import '../shared/ratings_reviews_card.dart';
 import '../shared/ratings_reviews_modal.dart';
@@ -66,8 +65,6 @@ class AdminDashboard extends StatefulWidget {
 class _AdminDashboardState extends State<AdminDashboard>
     with AutomaticKeepAliveClientMixin {
   int _selectedIndex = 0;
-  List<Map<String, dynamic>> _users = [];
-  bool _isLoading = true;
 
   // Real data for disease distribution and reports
   List<Map<String, dynamic>> _diseaseStats = [];
@@ -271,30 +268,11 @@ class _AdminDashboardState extends State<AdminDashboard>
   }
 
   Future<void> _loadData() async {
-    setState(() {
-      _isLoading = true;
-    });
-
     try {
       // Load remaining data in parallel (disease stats already loaded in initState)
-      await Future.wait([_loadUsers(), _loadStats(), _loadReportsTrend()]);
+      await Future.wait([_loadStats(), _loadReportsTrend()]);
     } catch (e) {
       print('Error loading dashboard data: $e');
-    } finally {
-      setState(() {
-        _isLoading = false;
-      });
-    }
-  }
-
-  Future<void> _loadUsers() async {
-    try {
-      final users = await UserStore.getUsers();
-      setState(() {
-        _users = users;
-      });
-    } catch (e) {
-      print('Error loading users: $e');
     }
   }
 
@@ -367,9 +345,10 @@ class _AdminDashboardState extends State<AdminDashboard>
   void _showRatingsReviewsModal(BuildContext context) {
     final screenWidth = MediaQuery.of(context).size.width;
     final screenHeight = MediaQuery.of(context).size.height;
-    final width = screenWidth > 900
-        ? 880.0
-        : (screenWidth * 0.92).clamp(320.0, double.infinity);
+    final width =
+        screenWidth > 900
+            ? 880.0
+            : (screenWidth * 0.92).clamp(320.0, double.infinity);
     showDialog(
       context: context,
       builder:
@@ -476,7 +455,7 @@ class _AdminDashboardState extends State<AdminDashboard>
                       padding: const EdgeInsets.symmetric(horizontal: 8),
                       children: [
                         TotalUsersCard(
-                          onTap: () {
+                          onOpenUserManagement: () {
                             setState(() {
                               _selectedIndex = 1; // Switch to users tab
                             });
@@ -985,7 +964,9 @@ class _AdminDashboardState extends State<AdminDashboard>
 
                                     await FirebaseAuth.instance.signOut();
                                     if (context.mounted) {
-                                      Navigator.of(context).pushNamedAndRemoveUntil(
+                                      Navigator.of(
+                                        context,
+                                      ).pushNamedAndRemoveUntil(
                                         '/',
                                         (route) => false,
                                       );

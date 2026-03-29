@@ -1149,9 +1149,7 @@ class _UserManagementState extends State<UserManagement> {
                                   DataColumn(label: Text('Name')),
                                   DataColumn(label: Text('Email')),
                                   DataColumn(label: Text('Phone Number')),
-                                  DataColumn(
-                                    label: Text('Address'),
-                                  ),
+                                  DataColumn(label: Text('Address')),
                                   DataColumn(
                                     label: SizedBox(
                                       width: 110,
@@ -1262,7 +1260,9 @@ class _UserManagementState extends State<UserManagement> {
                                                 SizedBox(
                                                   width: 110,
                                                   child: Text(
-                                                    _formatRoleName(user['role']),
+                                                    _formatRoleName(
+                                                      user['role'],
+                                                    ),
                                                     style: TextStyle(
                                                       color: _getRoleColor(
                                                         user['role'],
@@ -1276,7 +1276,9 @@ class _UserManagementState extends State<UserManagement> {
                                               DataCell(
                                                 SizedBox(
                                                   width: 105,
-                                                  child: Text(user['registeredAt']),
+                                                  child: Text(
+                                                    user['registeredAt'],
+                                                  ),
                                                 ),
                                               ),
                                               DataCell(
@@ -2074,9 +2076,7 @@ class _CreateAccountDialogState extends State<CreateAccountDialog> {
                                   const SizedBox(width: 12),
                                   ElevatedButton(
                                     onPressed:
-                                        _isLoading
-                                            ? null
-                                            : _createAccount,
+                                        _isLoading ? null : _createAccount,
                                     style: ElevatedButton.styleFrom(
                                       backgroundColor: const Color(0xFF2D7204),
                                       foregroundColor: Colors.white,

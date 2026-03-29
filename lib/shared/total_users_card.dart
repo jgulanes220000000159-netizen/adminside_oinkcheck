@@ -135,8 +135,8 @@ Color diseaseColor(String disease) {
 }
 
 class TotalUsersCard extends StatefulWidget {
-  final VoidCallback? onTap;
-  const TotalUsersCard({Key? key, this.onTap}) : super(key: key);
+  final VoidCallback? onOpenUserManagement;
+  const TotalUsersCard({Key? key, this.onOpenUserManagement}) : super(key: key);
 
   @override
   State<TotalUsersCard> createState() => _TotalUsersCardState();
@@ -542,6 +542,1308 @@ class _TotalReportsReviewedCardState extends State<TotalReportsReviewedCard> {
   void dispose() {
     _isHovered.dispose();
     super.dispose();
+  }
+
+  String _normalizeCityKey(String value) {
+    final normalized =
+        value
+            .toLowerCase()
+            .replaceAll(RegExp(r'[^a-z0-9\s]'), ' ')
+            .replaceAll(RegExp(r'\s+'), ' ')
+            .trim();
+
+    final collapsed =
+        normalized
+            .replaceAll(RegExp(r'\bcity of\b'), ' ')
+            .replaceAll(RegExp(r'\bmunicipality of\b'), ' ')
+            .replaceAll(RegExp(r'\bcity\b'), ' ')
+            .replaceAll(RegExp(r'\bmunicipality\b'), ' ')
+            .replaceAll(RegExp(r'\bof\b'), ' ')
+            .replaceAll(RegExp(r'\s+'), ' ')
+            .trim();
+
+    switch (collapsed) {
+      case 'samal':
+        return 'island garden samal';
+      default:
+        return collapsed;
+    }
+  }
+
+  String _userCountLabel(int count) =>
+      '$count ${count == 1 ? 'user' : 'users'}';
+
+  List<Map<String, dynamic>> _buildCityCounts(
+    QuerySnapshot usersSnapshot,
+    List<String> knownCities,
+  ) {
+    final normalizedKnownCities = knownCities.map(_normalizeCityKey).toList();
+    final Map<String, String> labelByKey = {
+      for (final city in knownCities) _normalizeCityKey(city): city,
+    };
+    final Map<String, int> countByKey = {
+      for (final city in knownCities) _normalizeCityKey(city): 0,
+    };
+
+    for (final doc in usersSnapshot.docs) {
+      final data = doc.data() as Map<String, dynamic>? ?? {};
+      final city = (data['cityMunicipality'] ?? '').toString().trim();
+      if (city.isEmpty) {
+        continue;
+      }
+
+      final key = _normalizeCityKey(city);
+      labelByKey.putIfAbsent(key, () => city);
+      countByKey[key] = (countByKey[key] ?? 0) + 1;
+    }
+
+    final extraKeys =
+        labelByKey.keys
+            .where((key) => !normalizedKnownCities.contains(key))
+            .toList()
+          ..sort(
+            (a, b) => (labelByKey[a] ?? '').toLowerCase().compareTo(
+              (labelByKey[b] ?? '').toLowerCase(),
+            ),
+          );
+
+    final orderedKeys = [...normalizedKnownCities, ...extraKeys];
+
+    return orderedKeys.map((key) {
+      return {
+        'city': labelByKey[key] ?? 'Unknown City',
+        'count': countByKey[key] ?? 0,
+      };
+    }).toList();
+  }
+
+  int _countUsersByRole(QuerySnapshot usersSnapshot, Set<String> roles) {
+    return usersSnapshot.docs.where((doc) {
+      final data = doc.data() as Map<String, dynamic>? ?? {};
+      final role = (data['role'] ?? '').toString().trim().toLowerCase();
+      return roles.contains(role);
+    }).length;
+  }
+
+  int _countUsersWithoutCity(QuerySnapshot usersSnapshot) {
+    return usersSnapshot.docs.where((doc) {
+      final data = doc.data() as Map<String, dynamic>? ?? {};
+      final city = (data['cityMunicipality'] ?? '').toString().trim();
+      return city.isEmpty;
+    }).length;
+  }
+
+  Widget _buildSummaryMetric({
+    required String label,
+    required String value,
+    required IconData icon,
+    required Color accentColor,
+  }) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 44,
+            height: 44,
+            decoration: BoxDecoration(
+              color: accentColor.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(14),
+            ),
+            child: Icon(icon, color: accentColor, size: 22),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.blueGrey.shade600,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  value,
+                  style: const TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w700,
+                    color: Color(0xFF0F172A),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _toTitleCaseWords(String value) {
+    final normalized = value.trim().replaceAll(RegExp(r'\s+'), ' ');
+    if (normalized.isEmpty) {
+      return '';
+    }
+
+    return normalized
+        .split(' ')
+        .map((word) {
+          if (word.isEmpty) {
+            return word;
+          }
+
+          final lower = word.toLowerCase();
+          return '${lower[0].toUpperCase()}${lower.substring(1)}';
+        })
+        .join(' ');
+  }
+
+  String _displayNameFromUserData(Map<String, dynamic> data) {
+    final fullName = (data['fullName'] ?? data['name'] ?? '').toString().trim();
+    if (fullName.isNotEmpty) {
+      return _toTitleCaseWords(fullName);
+    }
+
+    final email = (data['email'] ?? '').toString().trim();
+    if (email.isNotEmpty) {
+      return email;
+    }
+
+    return 'Unnamed User';
+  }
+
+  String _formatRoleLabel(String role) {
+    switch (role.trim().toLowerCase()) {
+      case 'farmer':
+        return 'Farmer';
+      case 'expert':
+        return 'Expert';
+      case 'head_veterinarian':
+        return 'Head Veterinarian';
+      case 'machine_learning_expert':
+        return 'Machine Learning Expert';
+      case 'admin':
+        return 'Admin';
+      default:
+        return _toTitleCaseWords(role.replaceAll('_', ' '));
+    }
+  }
+
+  Color _roleAccentColor(String role) {
+    switch (role.trim().toLowerCase()) {
+      case 'farmer':
+        return const Color(0xFF2D7204);
+      case 'expert':
+        return const Color(0xFF7C3AED);
+      case 'head_veterinarian':
+        return const Color(0xFFDC2626);
+      case 'machine_learning_expert':
+        return const Color(0xFF0F766E);
+      case 'admin':
+        return const Color(0xFFB45309);
+      default:
+        return const Color(0xFF475569);
+    }
+  }
+
+  int _roleSortRank(String role) {
+    switch (role.trim().toLowerCase()) {
+      case 'farmer':
+        return 0;
+      case 'expert':
+        return 1;
+      case 'head_veterinarian':
+        return 2;
+      case 'machine_learning_expert':
+        return 3;
+      case 'admin':
+        return 4;
+      default:
+        return 5;
+    }
+  }
+
+  List<Map<String, dynamic>> _buildUsersForCity(
+    QuerySnapshot usersSnapshot,
+    String city,
+  ) {
+    final cityKey = _normalizeCityKey(city);
+
+    final cityUsers =
+        usersSnapshot.docs
+            .map((doc) {
+              final data = doc.data() as Map<String, dynamic>? ?? {};
+              final userCity =
+                  (data['cityMunicipality'] ?? '').toString().trim();
+              if (_normalizeCityKey(userCity) != cityKey) {
+                return null;
+              }
+
+              final role =
+                  (data['role'] ?? 'user').toString().trim().toLowerCase();
+
+              return {
+                'id': doc.id,
+                'name': _displayNameFromUserData(data),
+                'role': role,
+                'barangay': _toTitleCaseWords(
+                  (data['barangay'] ?? '').toString(),
+                ),
+                'email': (data['email'] ?? '').toString().trim(),
+                'phone': (data['phoneNumber'] ?? '').toString().trim(),
+              };
+            })
+            .whereType<Map<String, dynamic>>()
+            .toList();
+
+    cityUsers.sort((a, b) {
+      final roleCompare = _roleSortRank(
+        (a['role'] ?? '').toString(),
+      ).compareTo(_roleSortRank((b['role'] ?? '').toString()));
+      if (roleCompare != 0) {
+        return roleCompare;
+      }
+
+      return (a['name'] ?? '').toString().toLowerCase().compareTo(
+        (b['name'] ?? '').toString().toLowerCase(),
+      );
+    });
+
+    return cityUsers;
+  }
+
+  Widget _buildUserMetaPill({
+    required IconData icon,
+    required String label,
+    required Color accentColor,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: accentColor.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: accentColor.withValues(alpha: 0.16)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 14, color: accentColor),
+          const SizedBox(width: 6),
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 11.5,
+              fontWeight: FontWeight.w600,
+              color: accentColor,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCityUserRow(Map<String, dynamic> user) {
+    final role = (user['role'] ?? '').toString();
+    final roleLabel = _formatRoleLabel(role);
+    final accentColor = _roleAccentColor(role);
+    final barangay = (user['barangay'] ?? '').toString().trim();
+    final email = (user['email'] ?? '').toString().trim();
+    final phone = (user['phone'] ?? '').toString().trim();
+
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 44,
+            height: 44,
+            decoration: BoxDecoration(
+              color: accentColor.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(14),
+            ),
+            child: Icon(
+              Icons.person_outline_rounded,
+              color: accentColor,
+              size: 22,
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(
+                      child: Text(
+                        (user['name'] ?? 'Unnamed User').toString(),
+                        style: const TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w700,
+                          color: Color(0xFF0F172A),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 6,
+                      ),
+                      decoration: BoxDecoration(
+                        color: accentColor.withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                      child: Text(
+                        roleLabel,
+                        style: TextStyle(
+                          fontSize: 11.5,
+                          fontWeight: FontWeight.w700,
+                          color: accentColor,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    if (barangay.isNotEmpty)
+                      _buildUserMetaPill(
+                        icon: Icons.place_outlined,
+                        label: barangay,
+                        accentColor: const Color(0xFF0369A1),
+                      ),
+                    if (phone.isNotEmpty)
+                      _buildUserMetaPill(
+                        icon: Icons.phone_outlined,
+                        label: phone,
+                        accentColor: const Color(0xFF475569),
+                      ),
+                  ],
+                ),
+                if (email.isNotEmpty) ...[
+                  const SizedBox(height: 10),
+                  Row(
+                    children: [
+                      Icon(
+                        Icons.email_outlined,
+                        size: 14,
+                        color: Colors.blueGrey.shade500,
+                      ),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: Text(
+                          email,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.blueGrey.shade600,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showCityUsersModal(
+    BuildContext context,
+    QuerySnapshot usersSnapshot,
+    String city,
+  ) {
+    final cityUsers = _buildUsersForCity(usersSnapshot, city);
+    final size = MediaQuery.of(context).size;
+    final farmerCount =
+        cityUsers.where((user) => user['role'] == 'farmer').length;
+    final expertCount =
+        cityUsers.where((user) => user['role'] == 'expert').length;
+    final headVetCount =
+        cityUsers.where((user) => user['role'] == 'head_veterinarian').length;
+    final mlExpertCount =
+        cityUsers
+            .where((user) => user['role'] == 'machine_learning_expert')
+            .length;
+    final adminCount =
+        cityUsers.where((user) => user['role'] == 'admin').length;
+
+    showDialog(
+      context: context,
+      builder: (context) {
+        return Dialog(
+          insetPadding: const EdgeInsets.symmetric(
+            horizontal: 30,
+            vertical: 24,
+          ),
+          clipBehavior: Clip.antiAlias,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(24),
+          ),
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              maxWidth: 860,
+              maxHeight: size.height * 0.82,
+            ),
+            child: Column(
+              children: [
+                Container(
+                  padding: const EdgeInsets.fromLTRB(24, 22, 18, 20),
+                  decoration: const BoxDecoration(
+                    color: Color(0xFFF8FAFC),
+                    border: Border(
+                      bottom: BorderSide(color: Color(0xFFE2E8F0)),
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 56,
+                        height: 56,
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFEFF6FF),
+                          borderRadius: BorderRadius.circular(18),
+                        ),
+                        child: const Icon(
+                          Icons.location_city_rounded,
+                          size: 30,
+                          color: Color(0xFF1D4ED8),
+                        ),
+                      ),
+                      const SizedBox(width: 16),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              city,
+                              style: const TextStyle(
+                                fontSize: 22,
+                                fontWeight: FontWeight.w700,
+                                color: Color(0xFF0F172A),
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              'Users assigned to this municipality/city.',
+                              style: TextStyle(
+                                fontSize: 13,
+                                color: Colors.blueGrey.shade600,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 7,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(999),
+                          border: Border.all(color: const Color(0xFFD6E4D4)),
+                        ),
+                        child: Text(
+                          _userCountLabel(cityUsers.length),
+                          style: const TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                            color: Color(0xFF2D7204),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      IconButton(
+                        style: IconButton.styleFrom(
+                          backgroundColor: Colors.white,
+                          foregroundColor: Colors.blueGrey,
+                          side: const BorderSide(color: Color(0xFFE2E8F0)),
+                        ),
+                        icon: const Icon(Icons.close),
+                        onPressed: () => Navigator.of(context).pop(),
+                      ),
+                    ],
+                  ),
+                ),
+                Expanded(
+                  child: Container(
+                    width: double.infinity,
+                    color: const Color(0xFFF8FAFC),
+                    padding: const EdgeInsets.fromLTRB(24, 18, 24, 18),
+                    child:
+                        cityUsers.isEmpty
+                            ? Center(
+                              child: Container(
+                                constraints: const BoxConstraints(
+                                  maxWidth: 420,
+                                ),
+                                padding: const EdgeInsets.all(24),
+                                decoration: BoxDecoration(
+                                  color: Colors.white,
+                                  borderRadius: BorderRadius.circular(20),
+                                  border: Border.all(
+                                    color: const Color(0xFFE2E8F0),
+                                  ),
+                                ),
+                                child: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Container(
+                                      width: 60,
+                                      height: 60,
+                                      decoration: BoxDecoration(
+                                        color: const Color(0xFFEFF6FF),
+                                        borderRadius: BorderRadius.circular(18),
+                                      ),
+                                      child: const Icon(
+                                        Icons.group_off_outlined,
+                                        color: Color(0xFF1D4ED8),
+                                        size: 30,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 16),
+                                    const Text(
+                                      'No users assigned yet',
+                                      style: TextStyle(
+                                        fontSize: 18,
+                                        fontWeight: FontWeight.w700,
+                                        color: Color(0xFF0F172A),
+                                      ),
+                                    ),
+                                    const SizedBox(height: 8),
+                                    Text(
+                                      'There are currently no accounts linked to $city.',
+                                      textAlign: TextAlign.center,
+                                      style: TextStyle(
+                                        fontSize: 13,
+                                        color: Colors.blueGrey.shade600,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            )
+                            : Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Wrap(
+                                  spacing: 10,
+                                  runSpacing: 10,
+                                  children: [
+                                    _buildUserMetaPill(
+                                      icon: Icons.groups_2_outlined,
+                                      label: _userCountLabel(cityUsers.length),
+                                      accentColor: const Color(0xFF1D4ED8),
+                                    ),
+                                    if (farmerCount > 0)
+                                      _buildUserMetaPill(
+                                        icon: Icons.agriculture_outlined,
+                                        label:
+                                            '$farmerCount ${farmerCount == 1 ? 'farmer' : 'farmers'}',
+                                        accentColor: const Color(0xFF2D7204),
+                                      ),
+                                    if (expertCount > 0)
+                                      _buildUserMetaPill(
+                                        icon: Icons.verified_user_outlined,
+                                        label:
+                                            '$expertCount ${expertCount == 1 ? 'expert' : 'experts'}',
+                                        accentColor: const Color(0xFF7C3AED),
+                                      ),
+                                    if (headVetCount > 0)
+                                      _buildUserMetaPill(
+                                        icon: Icons.health_and_safety_outlined,
+                                        label:
+                                            '$headVetCount ${headVetCount == 1 ? 'head vet' : 'head vets'}',
+                                        accentColor: const Color(0xFFDC2626),
+                                      ),
+                                    if (mlExpertCount > 0)
+                                      _buildUserMetaPill(
+                                        icon: Icons.memory_rounded,
+                                        label:
+                                            '$mlExpertCount ${mlExpertCount == 1 ? 'ML expert' : 'ML experts'}',
+                                        accentColor: const Color(0xFF0F766E),
+                                      ),
+                                    if (adminCount > 0)
+                                      _buildUserMetaPill(
+                                        icon:
+                                            Icons.admin_panel_settings_outlined,
+                                        label:
+                                            '$adminCount ${adminCount == 1 ? 'admin' : 'admins'}',
+                                        accentColor: const Color(0xFFB45309),
+                                      ),
+                                  ],
+                                ),
+                                const SizedBox(height: 16),
+                                Expanded(
+                                  child: ListView.separated(
+                                    itemCount: cityUsers.length,
+                                    separatorBuilder:
+                                        (_, __) => const SizedBox(height: 10),
+                                    itemBuilder: (context, index) {
+                                      return _buildCityUserRow(
+                                        cityUsers[index],
+                                      );
+                                    },
+                                  ),
+                                ),
+                              ],
+                            ),
+                  ),
+                ),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 24,
+                    vertical: 16,
+                  ),
+                  decoration: const BoxDecoration(
+                    color: Colors.white,
+                    border: Border(top: BorderSide(color: Color(0xFFE2E8F0))),
+                  ),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          'Total in $city: ${_userCountLabel(cityUsers.length)}',
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.blueGrey.shade700,
+                          ),
+                        ),
+                      ),
+                      FilledButton(
+                        onPressed: () => Navigator.of(context).pop(),
+                        child: const Text('Close'),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildCityCountTile(
+    BuildContext context,
+    QuerySnapshot usersSnapshot,
+    Map<String, dynamic> item,
+  ) {
+    final city = (item['city'] ?? 'Unknown City').toString();
+    final count = (item['count'] as num?)?.toInt() ?? 0;
+    final hasUsers = count > 0;
+
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(14),
+          onTap: () => _showCityUsersModal(context, usersSnapshot, city),
+          child: Ink(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            decoration: BoxDecoration(
+              color: hasUsers ? Colors.white : const Color(0xFFFCFDFD),
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(
+                color:
+                    hasUsers
+                        ? const Color(0xFFD6E4D4)
+                        : const Color(0xFFE2E8F0),
+              ),
+            ),
+            child: Row(
+              children: [
+                Container(
+                  width: 36,
+                  height: 36,
+                  decoration: BoxDecoration(
+                    color:
+                        hasUsers
+                            ? const Color(0xFFE8F5E9)
+                            : const Color(0xFFEFF6FF),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Icon(
+                    Icons.location_city_rounded,
+                    color:
+                        hasUsers
+                            ? const Color(0xFF2D7204)
+                            : const Color(0xFF1D4ED8),
+                    size: 18,
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        city,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 12.5,
+                          fontWeight: FontWeight.w700,
+                          color: Color(0xFF0F172A),
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        'Municipality/City',
+                        style: TextStyle(
+                          fontSize: 10,
+                          color: Colors.blueGrey.shade600,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Container(
+                  constraints: const BoxConstraints(minWidth: 54),
+                  alignment: Alignment.center,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 4,
+                  ),
+                  decoration: BoxDecoration(
+                    color:
+                        hasUsers
+                            ? const Color(0xFFE8F5E9)
+                            : const Color(0xFFF1F5F9),
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  child: Text(
+                    _userCountLabel(count),
+                    style: TextStyle(
+                      fontSize: 10.5,
+                      fontWeight: FontWeight.w700,
+                      color:
+                          hasUsers
+                              ? const Color(0xFF2D7204)
+                              : Colors.blueGrey.shade600,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildUsersByCityWarning(int usersWithoutCity) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFFBEB),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xFFFDE68A)),
+      ),
+      child: Row(
+        children: [
+          const Icon(
+            Icons.info_outline_rounded,
+            size: 18,
+            color: Color(0xFFB45309),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              '$usersWithoutCity ${usersWithoutCity == 1 ? 'account has' : 'accounts have'} no city assigned yet, so ${usersWithoutCity == 1 ? 'it is' : 'they are'} excluded from the city breakdown.',
+              style: const TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: Color(0xFF92400E),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  int _cityDistributionColumnCount(double maxWidth) {
+    if (maxWidth >= 1100) {
+      return 3;
+    }
+    if (maxWidth >= 760) {
+      return 2;
+    }
+    return 1;
+  }
+
+  void _showUsersByCityModal(
+    BuildContext context,
+    QuerySnapshot usersSnapshot,
+  ) {
+    showDialog(
+      context: context,
+      builder: (context) {
+        final size = MediaQuery.of(context).size;
+        const bool showDistributionOnly = false;
+
+        return Dialog(
+          insetPadding: const EdgeInsets.symmetric(
+            horizontal: 28,
+            vertical: 24,
+          ),
+          clipBehavior: Clip.antiAlias,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(24),
+          ),
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              maxWidth: 920,
+              maxHeight: size.height * 0.78,
+            ),
+            child: FutureBuilder<List<String>>(
+              future: ScanRequestsService.getDavaoDelNorteCityNames(),
+              builder: (context, snapshot) {
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return const SizedBox(
+                    width: 920,
+                    height: 420,
+                    child: Center(child: CircularProgressIndicator()),
+                  );
+                }
+
+                final knownCities = snapshot.data ?? const <String>[];
+                final cityCounts = _buildCityCounts(usersSnapshot, knownCities);
+                final totalAccounts = usersSnapshot.docs.length;
+                final farmerCount = _countUsersByRole(usersSnapshot, {
+                  'farmer',
+                });
+                final expertCount = _countUsersByRole(usersSnapshot, {
+                  'expert',
+                });
+                final headVetCount = _countUsersByRole(usersSnapshot, {
+                  'head_veterinarian',
+                });
+                final mlExpertCount = _countUsersByRole(usersSnapshot, {
+                  'machine_learning_expert',
+                });
+                final activeCities =
+                    cityCounts.where((item) {
+                      return ((item['count'] as num?)?.toInt() ?? 0) > 0;
+                    }).length;
+                final usersWithoutCity = _countUsersWithoutCity(usersSnapshot);
+
+                return Column(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.fromLTRB(24, 22, 18, 20),
+                      decoration: const BoxDecoration(
+                        color: Color(0xFFF8FAFC),
+                        border: Border(
+                          bottom: BorderSide(color: Color(0xFFE2E8F0)),
+                        ),
+                      ),
+                      child: Row(
+                        children: [
+                          Container(
+                            width: 56,
+                            height: 56,
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFEFF6FF),
+                              borderRadius: BorderRadius.circular(18),
+                            ),
+                            child: const Icon(
+                              Icons.people_alt_rounded,
+                              size: 30,
+                              color: Color(0xFF1D4ED8),
+                            ),
+                          ),
+                          const SizedBox(width: 16),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text(
+                                  'Users by City',
+                                  style: TextStyle(
+                                    fontSize: 22,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  'Live dashboard view of registered accounts grouped by municipality/city.',
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    color: Colors.blueGrey.shade600,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 7,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(999),
+                              border: Border.all(
+                                color: const Color(0xFFD6E4D4),
+                              ),
+                            ),
+                            child: Text(
+                              _userCountLabel(totalAccounts),
+                              style: const TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w700,
+                                color: Color(0xFF2D7204),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          IconButton(
+                            style: IconButton.styleFrom(
+                              backgroundColor: Colors.white,
+                              foregroundColor: Colors.blueGrey,
+                              side: const BorderSide(color: Color(0xFFE2E8F0)),
+                            ),
+                            icon: const Icon(Icons.close),
+                            onPressed: () => Navigator.of(context).pop(),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Expanded(
+                      child: Container(
+                        width: double.infinity,
+                        color: const Color(0xFFF8FAFC),
+                        padding: const EdgeInsets.fromLTRB(24, 20, 24, 16),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            if (!showDistributionOnly) ...[
+                              LayoutBuilder(
+                                builder: (context, constraints) {
+                                  final summaryItems = [
+                                    _buildSummaryMetric(
+                                      label: 'Total Accounts',
+                                      value: _userCountLabel(totalAccounts),
+                                      icon: Icons.groups_2_outlined,
+                                      accentColor: const Color(0xFF1D4ED8),
+                                    ),
+                                    _buildSummaryMetric(
+                                      label: 'Farmer Accounts',
+                                      value: _userCountLabel(farmerCount),
+                                      icon: Icons.agriculture_outlined,
+                                      accentColor: const Color(0xFF2D7204),
+                                    ),
+                                    _buildSummaryMetric(
+                                      label: 'Expert Accounts',
+                                      value: _userCountLabel(expertCount),
+                                      icon: Icons.verified_user_outlined,
+                                      accentColor: const Color(0xFF7C3AED),
+                                    ),
+                                    _buildSummaryMetric(
+                                      label: 'Head Veterinarian',
+                                      value: _userCountLabel(headVetCount),
+                                      icon: Icons.health_and_safety_outlined,
+                                      accentColor: const Color(0xFFDC2626),
+                                    ),
+                                    _buildSummaryMetric(
+                                      label: 'Machine Learning Experts',
+                                      value: _userCountLabel(mlExpertCount),
+                                      icon: Icons.memory_rounded,
+                                      accentColor: const Color(0xFF0F766E),
+                                    ),
+                                    _buildSummaryMetric(
+                                      label: 'Cities with Users',
+                                      value:
+                                          '$activeCities ${activeCities == 1 ? 'city' : 'cities'}',
+                                      icon: Icons.location_city_outlined,
+                                      accentColor: const Color(0xFF0369A1),
+                                    ),
+                                  ];
+
+                                  final crossAxisCount =
+                                      constraints.maxWidth >= 760 ? 3 : 1;
+                                  final spacing = 12.0;
+                                  final itemWidth =
+                                      (constraints.maxWidth -
+                                          ((crossAxisCount - 1) * spacing)) /
+                                      crossAxisCount;
+
+                                  return Wrap(
+                                    spacing: spacing,
+                                    runSpacing: spacing,
+                                    children:
+                                        summaryItems
+                                            .map(
+                                              (item) => SizedBox(
+                                                width: itemWidth,
+                                                child: item,
+                                              ),
+                                            )
+                                            .toList(),
+                                  );
+                                },
+                              ),
+                              if (usersWithoutCity > 0) ...[
+                                const SizedBox(height: 14),
+                                Container(
+                                  width: double.infinity,
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 14,
+                                    vertical: 12,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFFFFFBEB),
+                                    borderRadius: BorderRadius.circular(14),
+                                    border: Border.all(
+                                      color: const Color(0xFFFDE68A),
+                                    ),
+                                  ),
+                                  child: Row(
+                                    children: [
+                                      const Icon(
+                                        Icons.info_outline_rounded,
+                                        size: 18,
+                                        color: Color(0xFFB45309),
+                                      ),
+                                      const SizedBox(width: 10),
+                                      Expanded(
+                                        child: Text(
+                                          '$usersWithoutCity ${usersWithoutCity == 1 ? 'account has' : 'accounts have'} no city assigned yet, so ${usersWithoutCity == 1 ? 'it is' : 'they are'} excluded from the city breakdown.',
+                                          style: const TextStyle(
+                                            fontSize: 12,
+                                            fontWeight: FontWeight.w600,
+                                            color: Color(0xFF92400E),
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                              const SizedBox(height: 18),
+                            ] else ...[
+                              Container(
+                                width: double.infinity,
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 16,
+                                  vertical: 12,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFFEFF6FF),
+                                  borderRadius: BorderRadius.circular(14),
+                                  border: Border.all(
+                                    color: const Color(0xFFBFDBFE),
+                                  ),
+                                ),
+                                child: Row(
+                                  children: [
+                                    const Icon(
+                                      Icons.visibility_rounded,
+                                      size: 18,
+                                      color: Color(0xFF1D4ED8),
+                                    ),
+                                    const SizedBox(width: 10),
+                                    Expanded(
+                                      child: Text(
+                                        'Focused city view enabled. The modal is now showing only the city distribution section for better visibility.',
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.w600,
+                                          color: Colors.blueGrey.shade700,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(height: 16),
+                              if (usersWithoutCity > 0) ...[
+                                Container(
+                                  width: double.infinity,
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 14,
+                                    vertical: 12,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFFFFFBEB),
+                                    borderRadius: BorderRadius.circular(14),
+                                    border: Border.all(
+                                      color: const Color(0xFFFDE68A),
+                                    ),
+                                  ),
+                                  child: Row(
+                                    children: [
+                                      const Icon(
+                                        Icons.info_outline_rounded,
+                                        size: 18,
+                                        color: Color(0xFFB45309),
+                                      ),
+                                      const SizedBox(width: 10),
+                                      Expanded(
+                                        child: Text(
+                                          '$usersWithoutCity ${usersWithoutCity == 1 ? 'account has' : 'accounts have'} no city assigned yet, so ${usersWithoutCity == 1 ? 'it is' : 'they are'} excluded from the city breakdown.',
+                                          style: const TextStyle(
+                                            fontSize: 12,
+                                            fontWeight: FontWeight.w600,
+                                            color: Color(0xFF92400E),
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                const SizedBox(height: 16),
+                              ],
+                            ],
+                            Row(
+                              children: [
+                                Text(
+                                  showDistributionOnly
+                                      ? 'City Distribution Only'
+                                      : 'City Distribution',
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w700,
+                                    color: Colors.blueGrey.shade700,
+                                    letterSpacing: 0.2,
+                                  ),
+                                ),
+                                const Spacer(),
+                                Text(
+                                  'Counts include all account types assigned to a city',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: Colors.blueGrey.shade500,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 14),
+                            Expanded(
+                              child: Scrollbar(
+                                thumbVisibility: true,
+                                child: LayoutBuilder(
+                                  builder: (context, constraints) {
+                                    int crossAxisCount = 1;
+                                    if (constraints.maxWidth >= 960) {
+                                      crossAxisCount = 2;
+                                    } else if (constraints.maxWidth >= 760 &&
+                                        !showDistributionOnly) {
+                                      crossAxisCount = 2;
+                                    }
+
+                                    return GridView.builder(
+                                      physics:
+                                          const AlwaysScrollableScrollPhysics(),
+                                      padding: const EdgeInsets.only(right: 4),
+                                      itemCount: cityCounts.length,
+                                      gridDelegate:
+                                          SliverGridDelegateWithFixedCrossAxisCount(
+                                            crossAxisCount: crossAxisCount,
+                                            crossAxisSpacing: 12,
+                                            mainAxisSpacing: 12,
+                                            childAspectRatio:
+                                                showDistributionOnly
+                                                    ? 3.0
+                                                    : 3.4,
+                                          ),
+                                      itemBuilder: (context, index) {
+                                        return _buildCityCountTile(
+                                          context,
+                                          usersSnapshot,
+                                          cityCounts[index],
+                                        );
+                                      },
+                                    );
+                                  },
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 24,
+                        vertical: 16,
+                      ),
+                      decoration: const BoxDecoration(
+                        color: Colors.white,
+                        border: Border(
+                          top: BorderSide(color: Color(0xFFE2E8F0)),
+                        ),
+                      ),
+                      child: Wrap(
+                        alignment: WrapAlignment.spaceBetween,
+                        runSpacing: 12,
+                        spacing: 12,
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        children: [
+                          Text(
+                            'Total accounts: ${_userCountLabel(totalAccounts)}',
+                            style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                              color: Colors.blueGrey.shade700,
+                            ),
+                          ),
+                          Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              FilledButton(
+                                onPressed: () => Navigator.of(context).pop(),
+                                child: const Text('Close'),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                );
+              },
+            ),
+          ),
+        );
+      },
+    );
   }
 
   @override
@@ -4719,6 +6021,13 @@ class _ReportsModalContentState extends State<ReportsModalContent>
 
 class _TotalUsersCardState extends State<TotalUsersCard> {
   final ValueNotifier<bool> _isHovered = ValueNotifier(false);
+  late final Future<List<String>> _cityNamesFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    _cityNamesFuture = ScanRequestsService.getDavaoDelNorteCityNames();
+  }
 
   @override
   void dispose() {
@@ -4726,11 +6035,1247 @@ class _TotalUsersCardState extends State<TotalUsersCard> {
     super.dispose();
   }
 
+  String _normalizeCityKey(String value) {
+    final normalized =
+        value
+            .toLowerCase()
+            .replaceAll(RegExp(r'[^a-z0-9\s]'), ' ')
+            .replaceAll(RegExp(r'\s+'), ' ')
+            .trim();
+
+    final collapsed =
+        normalized
+            .replaceAll(RegExp(r'\bcity of\b'), ' ')
+            .replaceAll(RegExp(r'\bmunicipality of\b'), ' ')
+            .replaceAll(RegExp(r'\bcity\b'), ' ')
+            .replaceAll(RegExp(r'\bmunicipality\b'), ' ')
+            .replaceAll(RegExp(r'\bof\b'), ' ')
+            .replaceAll(RegExp(r'\s+'), ' ')
+            .trim();
+
+    switch (collapsed) {
+      case 'samal':
+        return 'island garden samal';
+      default:
+        return collapsed;
+    }
+  }
+
+  String _userCountLabel(int count) =>
+      '$count ${count == 1 ? 'user' : 'users'}';
+
+  Widget _buildUsersByCityWarning(int usersWithoutCity) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFFBEB),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xFFFDE68A)),
+      ),
+      child: Row(
+        children: [
+          const Icon(
+            Icons.info_outline_rounded,
+            size: 18,
+            color: Color(0xFFB45309),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              '$usersWithoutCity ${usersWithoutCity == 1 ? 'account has' : 'accounts have'} no city assigned yet, so ${usersWithoutCity == 1 ? 'it is' : 'they are'} excluded from the city breakdown.',
+              style: const TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: Color(0xFF92400E),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  List<Map<String, dynamic>> _buildCityCounts(
+    QuerySnapshot usersSnapshot,
+    List<String> knownCities,
+  ) {
+    final normalizedKnownCities = knownCities.map(_normalizeCityKey).toList();
+    final Map<String, String> labelByKey = {
+      for (final city in knownCities) _normalizeCityKey(city): city,
+    };
+    final Map<String, int> countByKey = {
+      for (final city in knownCities) _normalizeCityKey(city): 0,
+    };
+
+    for (final doc in usersSnapshot.docs) {
+      final data = doc.data() as Map<String, dynamic>? ?? {};
+      final city = (data['cityMunicipality'] ?? '').toString().trim();
+      if (city.isEmpty) {
+        continue;
+      }
+
+      final key = _normalizeCityKey(city);
+      labelByKey.putIfAbsent(key, () => city);
+      countByKey[key] = (countByKey[key] ?? 0) + 1;
+    }
+
+    final extraKeys =
+        labelByKey.keys
+            .where((key) => !normalizedKnownCities.contains(key))
+            .toList()
+          ..sort(
+            (a, b) => (labelByKey[a] ?? '').toLowerCase().compareTo(
+              (labelByKey[b] ?? '').toLowerCase(),
+            ),
+          );
+
+    final orderedKeys = [...normalizedKnownCities, ...extraKeys];
+
+    return orderedKeys.map((key) {
+      return {
+        'city': labelByKey[key] ?? 'Unknown City',
+        'count': countByKey[key] ?? 0,
+      };
+    }).toList();
+  }
+
+  int _countUsersByRole(QuerySnapshot usersSnapshot, Set<String> roles) {
+    return usersSnapshot.docs.where((doc) {
+      final data = doc.data() as Map<String, dynamic>? ?? {};
+      final role = (data['role'] ?? '').toString().trim().toLowerCase();
+      return roles.contains(role);
+    }).length;
+  }
+
+  int _countUsersWithoutCity(QuerySnapshot usersSnapshot) {
+    return usersSnapshot.docs.where((doc) {
+      final data = doc.data() as Map<String, dynamic>? ?? {};
+      final city = (data['cityMunicipality'] ?? '').toString().trim();
+      return city.isEmpty;
+    }).length;
+  }
+
+  Widget _buildSummaryMetric({
+    required String label,
+    required String value,
+    required IconData icon,
+    required Color accentColor,
+  }) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 44,
+            height: 44,
+            decoration: BoxDecoration(
+              color: accentColor.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(14),
+            ),
+            child: Icon(icon, color: accentColor, size: 22),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.blueGrey.shade600,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  value,
+                  style: const TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w700,
+                    color: Color(0xFF0F172A),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _toTitleCaseWords(String value) {
+    final normalized = value.trim().replaceAll(RegExp(r'\s+'), ' ');
+    if (normalized.isEmpty) {
+      return '';
+    }
+
+    return normalized
+        .split(' ')
+        .map((word) {
+          if (word.isEmpty) {
+            return word;
+          }
+
+          final lower = word.toLowerCase();
+          return '${lower[0].toUpperCase()}${lower.substring(1)}';
+        })
+        .join(' ');
+  }
+
+  String _displayNameFromUserData(Map<String, dynamic> data) {
+    final fullName = (data['fullName'] ?? data['name'] ?? '').toString().trim();
+    if (fullName.isNotEmpty) {
+      return _toTitleCaseWords(fullName);
+    }
+
+    final email = (data['email'] ?? '').toString().trim();
+    if (email.isNotEmpty) {
+      return email;
+    }
+
+    return 'Unnamed User';
+  }
+
+  String _formatRoleLabel(String role) {
+    switch (role.trim().toLowerCase()) {
+      case 'farmer':
+        return 'Farmer';
+      case 'expert':
+        return 'Expert';
+      case 'head_veterinarian':
+        return 'Head Veterinarian';
+      case 'machine_learning_expert':
+        return 'Machine Learning Expert';
+      case 'admin':
+        return 'Admin';
+      default:
+        return _toTitleCaseWords(role.replaceAll('_', ' '));
+    }
+  }
+
+  Color _roleAccentColor(String role) {
+    switch (role.trim().toLowerCase()) {
+      case 'farmer':
+        return const Color(0xFF2D7204);
+      case 'expert':
+        return const Color(0xFF7C3AED);
+      case 'head_veterinarian':
+        return const Color(0xFFDC2626);
+      case 'machine_learning_expert':
+        return const Color(0xFF0F766E);
+      case 'admin':
+        return const Color(0xFFB45309);
+      default:
+        return const Color(0xFF475569);
+    }
+  }
+
+  int _roleSortRank(String role) {
+    switch (role.trim().toLowerCase()) {
+      case 'farmer':
+        return 0;
+      case 'expert':
+        return 1;
+      case 'head_veterinarian':
+        return 2;
+      case 'machine_learning_expert':
+        return 3;
+      case 'admin':
+        return 4;
+      default:
+        return 5;
+    }
+  }
+
+  List<Map<String, dynamic>> _buildUsersForCity(
+    QuerySnapshot usersSnapshot,
+    String city,
+  ) {
+    final cityKey = _normalizeCityKey(city);
+
+    final cityUsers =
+        usersSnapshot.docs
+            .map((doc) {
+              final data = doc.data() as Map<String, dynamic>? ?? {};
+              final userCity =
+                  (data['cityMunicipality'] ?? '').toString().trim();
+              if (_normalizeCityKey(userCity) != cityKey) {
+                return null;
+              }
+
+              final role =
+                  (data['role'] ?? 'user').toString().trim().toLowerCase();
+
+              return {
+                'id': doc.id,
+                'name': _displayNameFromUserData(data),
+                'role': role,
+                'barangay': _toTitleCaseWords(
+                  (data['barangay'] ?? '').toString(),
+                ),
+                'email': (data['email'] ?? '').toString().trim(),
+                'phone': (data['phoneNumber'] ?? '').toString().trim(),
+              };
+            })
+            .whereType<Map<String, dynamic>>()
+            .toList();
+
+    cityUsers.sort((a, b) {
+      final roleCompare = _roleSortRank(
+        (a['role'] ?? '').toString(),
+      ).compareTo(_roleSortRank((b['role'] ?? '').toString()));
+      if (roleCompare != 0) {
+        return roleCompare;
+      }
+
+      return (a['name'] ?? '').toString().toLowerCase().compareTo(
+        (b['name'] ?? '').toString().toLowerCase(),
+      );
+    });
+
+    return cityUsers;
+  }
+
+  Widget _buildUserMetaPill({
+    required IconData icon,
+    required String label,
+    required Color accentColor,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: accentColor.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: accentColor.withValues(alpha: 0.16)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 14, color: accentColor),
+          const SizedBox(width: 6),
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 11.5,
+              fontWeight: FontWeight.w600,
+              color: accentColor,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCityUserRow(Map<String, dynamic> user) {
+    final role = (user['role'] ?? '').toString();
+    final roleLabel = _formatRoleLabel(role);
+    final accentColor = _roleAccentColor(role);
+    final barangay = (user['barangay'] ?? '').toString().trim();
+    final email = (user['email'] ?? '').toString().trim();
+    final phone = (user['phone'] ?? '').toString().trim();
+
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 44,
+            height: 44,
+            decoration: BoxDecoration(
+              color: accentColor.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(14),
+            ),
+            child: Icon(
+              Icons.person_outline_rounded,
+              color: accentColor,
+              size: 22,
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(
+                      child: Text(
+                        (user['name'] ?? 'Unnamed User').toString(),
+                        style: const TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w700,
+                          color: Color(0xFF0F172A),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 6,
+                      ),
+                      decoration: BoxDecoration(
+                        color: accentColor.withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                      child: Text(
+                        roleLabel,
+                        style: TextStyle(
+                          fontSize: 11.5,
+                          fontWeight: FontWeight.w700,
+                          color: accentColor,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    if (barangay.isNotEmpty)
+                      _buildUserMetaPill(
+                        icon: Icons.place_outlined,
+                        label: barangay,
+                        accentColor: const Color(0xFF0369A1),
+                      ),
+                    if (phone.isNotEmpty)
+                      _buildUserMetaPill(
+                        icon: Icons.phone_outlined,
+                        label: phone,
+                        accentColor: const Color(0xFF475569),
+                      ),
+                  ],
+                ),
+                if (email.isNotEmpty) ...[
+                  const SizedBox(height: 10),
+                  Row(
+                    children: [
+                      Icon(
+                        Icons.email_outlined,
+                        size: 14,
+                        color: Colors.blueGrey.shade500,
+                      ),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: Text(
+                          email,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.blueGrey.shade600,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showCityUsersModal(
+    BuildContext context,
+    QuerySnapshot usersSnapshot,
+    String city,
+  ) {
+    final cityUsers = _buildUsersForCity(usersSnapshot, city);
+    final size = MediaQuery.of(context).size;
+    final farmerCount =
+        cityUsers.where((user) => user['role'] == 'farmer').length;
+    final expertCount =
+        cityUsers.where((user) => user['role'] == 'expert').length;
+    final headVetCount =
+        cityUsers.where((user) => user['role'] == 'head_veterinarian').length;
+    final mlExpertCount =
+        cityUsers
+            .where((user) => user['role'] == 'machine_learning_expert')
+            .length;
+    final adminCount =
+        cityUsers.where((user) => user['role'] == 'admin').length;
+
+    showDialog(
+      context: context,
+      builder: (context) {
+        return Dialog(
+          insetPadding: const EdgeInsets.symmetric(
+            horizontal: 30,
+            vertical: 24,
+          ),
+          clipBehavior: Clip.antiAlias,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(24),
+          ),
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              maxWidth: 860,
+              maxHeight: size.height * 0.82,
+            ),
+            child: Column(
+              children: [
+                Container(
+                  padding: const EdgeInsets.fromLTRB(24, 22, 18, 20),
+                  decoration: const BoxDecoration(
+                    color: Color(0xFFF8FAFC),
+                    border: Border(
+                      bottom: BorderSide(color: Color(0xFFE2E8F0)),
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 56,
+                        height: 56,
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFEFF6FF),
+                          borderRadius: BorderRadius.circular(18),
+                        ),
+                        child: const Icon(
+                          Icons.location_city_rounded,
+                          size: 30,
+                          color: Color(0xFF1D4ED8),
+                        ),
+                      ),
+                      const SizedBox(width: 16),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              city,
+                              style: const TextStyle(
+                                fontSize: 22,
+                                fontWeight: FontWeight.w700,
+                                color: Color(0xFF0F172A),
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              'Users assigned to this municipality/city.',
+                              style: TextStyle(
+                                fontSize: 13,
+                                color: Colors.blueGrey.shade600,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 7,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(999),
+                          border: Border.all(color: const Color(0xFFD6E4D4)),
+                        ),
+                        child: Text(
+                          _userCountLabel(cityUsers.length),
+                          style: const TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                            color: Color(0xFF2D7204),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      IconButton(
+                        style: IconButton.styleFrom(
+                          backgroundColor: Colors.white,
+                          foregroundColor: Colors.blueGrey,
+                          side: const BorderSide(color: Color(0xFFE2E8F0)),
+                        ),
+                        icon: const Icon(Icons.close),
+                        onPressed: () => Navigator.of(context).pop(),
+                      ),
+                    ],
+                  ),
+                ),
+                Expanded(
+                  child: Container(
+                    width: double.infinity,
+                    color: const Color(0xFFF8FAFC),
+                    padding: const EdgeInsets.fromLTRB(24, 18, 24, 18),
+                    child:
+                        cityUsers.isEmpty
+                            ? Center(
+                              child: Container(
+                                constraints: const BoxConstraints(
+                                  maxWidth: 420,
+                                ),
+                                padding: const EdgeInsets.all(24),
+                                decoration: BoxDecoration(
+                                  color: Colors.white,
+                                  borderRadius: BorderRadius.circular(20),
+                                  border: Border.all(
+                                    color: const Color(0xFFE2E8F0),
+                                  ),
+                                ),
+                                child: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Container(
+                                      width: 60,
+                                      height: 60,
+                                      decoration: BoxDecoration(
+                                        color: const Color(0xFFEFF6FF),
+                                        borderRadius: BorderRadius.circular(18),
+                                      ),
+                                      child: const Icon(
+                                        Icons.group_off_outlined,
+                                        color: Color(0xFF1D4ED8),
+                                        size: 30,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 16),
+                                    const Text(
+                                      'No users assigned yet',
+                                      style: TextStyle(
+                                        fontSize: 18,
+                                        fontWeight: FontWeight.w700,
+                                        color: Color(0xFF0F172A),
+                                      ),
+                                    ),
+                                    const SizedBox(height: 8),
+                                    Text(
+                                      'There are currently no accounts linked to $city.',
+                                      textAlign: TextAlign.center,
+                                      style: TextStyle(
+                                        fontSize: 13,
+                                        color: Colors.blueGrey.shade600,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            )
+                            : Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Wrap(
+                                  spacing: 10,
+                                  runSpacing: 10,
+                                  children: [
+                                    _buildUserMetaPill(
+                                      icon: Icons.groups_2_outlined,
+                                      label: _userCountLabel(cityUsers.length),
+                                      accentColor: const Color(0xFF1D4ED8),
+                                    ),
+                                    if (farmerCount > 0)
+                                      _buildUserMetaPill(
+                                        icon: Icons.agriculture_outlined,
+                                        label:
+                                            '$farmerCount ${farmerCount == 1 ? 'farmer' : 'farmers'}',
+                                        accentColor: const Color(0xFF2D7204),
+                                      ),
+                                    if (expertCount > 0)
+                                      _buildUserMetaPill(
+                                        icon: Icons.verified_user_outlined,
+                                        label:
+                                            '$expertCount ${expertCount == 1 ? 'expert' : 'experts'}',
+                                        accentColor: const Color(0xFF7C3AED),
+                                      ),
+                                    if (headVetCount > 0)
+                                      _buildUserMetaPill(
+                                        icon: Icons.health_and_safety_outlined,
+                                        label:
+                                            '$headVetCount ${headVetCount == 1 ? 'head vet' : 'head vets'}',
+                                        accentColor: const Color(0xFFDC2626),
+                                      ),
+                                    if (mlExpertCount > 0)
+                                      _buildUserMetaPill(
+                                        icon: Icons.memory_rounded,
+                                        label:
+                                            '$mlExpertCount ${mlExpertCount == 1 ? 'ML expert' : 'ML experts'}',
+                                        accentColor: const Color(0xFF0F766E),
+                                      ),
+                                    if (adminCount > 0)
+                                      _buildUserMetaPill(
+                                        icon:
+                                            Icons.admin_panel_settings_outlined,
+                                        label:
+                                            '$adminCount ${adminCount == 1 ? 'admin' : 'admins'}',
+                                        accentColor: const Color(0xFFB45309),
+                                      ),
+                                  ],
+                                ),
+                                const SizedBox(height: 16),
+                                Expanded(
+                                  child: ListView.separated(
+                                    itemCount: cityUsers.length,
+                                    separatorBuilder:
+                                        (_, __) => const SizedBox(height: 10),
+                                    itemBuilder: (context, index) {
+                                      return _buildCityUserRow(
+                                        cityUsers[index],
+                                      );
+                                    },
+                                  ),
+                                ),
+                              ],
+                            ),
+                  ),
+                ),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 24,
+                    vertical: 16,
+                  ),
+                  decoration: const BoxDecoration(
+                    color: Colors.white,
+                    border: Border(top: BorderSide(color: Color(0xFFE2E8F0))),
+                  ),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          'Total in $city: ${_userCountLabel(cityUsers.length)}',
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.blueGrey.shade700,
+                          ),
+                        ),
+                      ),
+                      FilledButton(
+                        onPressed: () => Navigator.of(context).pop(),
+                        child: const Text('Close'),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildCityCountTile(
+    BuildContext context,
+    QuerySnapshot usersSnapshot,
+    Map<String, dynamic> item,
+  ) {
+    final city = (item['city'] ?? 'Unknown City').toString();
+    final count = (item['count'] as num?)?.toInt() ?? 0;
+    final hasUsers = count > 0;
+
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(14),
+          onTap: () => _showCityUsersModal(context, usersSnapshot, city),
+          child: Ink(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            decoration: BoxDecoration(
+              color: hasUsers ? Colors.white : const Color(0xFFFCFDFD),
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(
+                color:
+                    hasUsers
+                        ? const Color(0xFFD6E4D4)
+                        : const Color(0xFFE2E8F0),
+              ),
+            ),
+            child: Row(
+              children: [
+                Container(
+                  width: 36,
+                  height: 36,
+                  decoration: BoxDecoration(
+                    color:
+                        hasUsers
+                            ? const Color(0xFFE8F5E9)
+                            : const Color(0xFFEFF6FF),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Icon(
+                    Icons.location_city_rounded,
+                    color:
+                        hasUsers
+                            ? const Color(0xFF2D7204)
+                            : const Color(0xFF1D4ED8),
+                    size: 18,
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        city,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 12.5,
+                          fontWeight: FontWeight.w700,
+                          color: Color(0xFF0F172A),
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        'Municipality/City',
+                        style: TextStyle(
+                          fontSize: 10,
+                          color: Colors.blueGrey.shade600,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Container(
+                  constraints: const BoxConstraints(minWidth: 54),
+                  alignment: Alignment.center,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 4,
+                  ),
+                  decoration: BoxDecoration(
+                    color:
+                        hasUsers
+                            ? const Color(0xFFE8F5E9)
+                            : const Color(0xFFF1F5F9),
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  child: Text(
+                    _userCountLabel(count),
+                    style: TextStyle(
+                      fontSize: 10.5,
+                      fontWeight: FontWeight.w700,
+                      color:
+                          hasUsers
+                              ? const Color(0xFF2D7204)
+                              : Colors.blueGrey.shade600,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  int _cityDistributionColumnCount(double maxWidth) {
+    if (maxWidth >= 1120) {
+      return 3;
+    }
+    if (maxWidth >= 780) {
+      return 2;
+    }
+    return 1;
+  }
+
+  void _showUsersByCityModal(
+    BuildContext context,
+    QuerySnapshot usersSnapshot,
+  ) {
+    showDialog(
+      context: context,
+      builder: (context) {
+        final size = MediaQuery.of(context).size;
+
+        return Dialog(
+          insetPadding: const EdgeInsets.symmetric(
+            horizontal: 22,
+            vertical: 18,
+          ),
+          clipBehavior: Clip.antiAlias,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(24),
+          ),
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              maxWidth: 1240,
+              maxHeight: size.height * 0.86,
+            ),
+            child: FutureBuilder<List<String>>(
+              future: _cityNamesFuture,
+              builder: (context, snapshot) {
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return const SizedBox(
+                    width: 1080,
+                    height: 420,
+                    child: Center(child: CircularProgressIndicator()),
+                  );
+                }
+
+                final knownCities = snapshot.data ?? const <String>[];
+                final cityCounts = _buildCityCounts(usersSnapshot, knownCities);
+                final totalAccounts = usersSnapshot.docs.length;
+                final farmerCount = _countUsersByRole(usersSnapshot, {
+                  'farmer',
+                });
+                final expertCount = _countUsersByRole(usersSnapshot, {
+                  'expert',
+                });
+                final headVetCount = _countUsersByRole(usersSnapshot, {
+                  'head_veterinarian',
+                });
+                final mlExpertCount = _countUsersByRole(usersSnapshot, {
+                  'machine_learning_expert',
+                });
+                final activeCities =
+                    cityCounts.where((item) {
+                      return ((item['count'] as num?)?.toInt() ?? 0) > 0;
+                    }).length;
+                final usersWithoutCity = _countUsersWithoutCity(usersSnapshot);
+
+                return Column(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.fromLTRB(24, 22, 18, 20),
+                      decoration: const BoxDecoration(
+                        color: Color(0xFFF8FAFC),
+                        border: Border(
+                          bottom: BorderSide(color: Color(0xFFE2E8F0)),
+                        ),
+                      ),
+                      child: Column(
+                        children: [
+                          Row(
+                            children: [
+                              Container(
+                                width: 56,
+                                height: 56,
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFFEFF6FF),
+                                  borderRadius: BorderRadius.circular(18),
+                                ),
+                                child: const Icon(
+                                  Icons.people_alt_rounded,
+                                  size: 30,
+                                  color: Color(0xFF1D4ED8),
+                                ),
+                              ),
+                              const SizedBox(width: 16),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    const Text(
+                                      'Users by City',
+                                      style: TextStyle(
+                                        fontSize: 22,
+                                        fontWeight: FontWeight.w700,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      'Live dashboard view of registered accounts grouped by municipality/city.',
+                                      style: TextStyle(
+                                        fontSize: 13,
+                                        color: Colors.blueGrey.shade600,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 12,
+                                  vertical: 7,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: Colors.white,
+                                  borderRadius: BorderRadius.circular(999),
+                                  border: Border.all(
+                                    color: const Color(0xFFD6E4D4),
+                                  ),
+                                ),
+                                child: Text(
+                                  _userCountLabel(totalAccounts),
+                                  style: const TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w700,
+                                    color: Color(0xFF2D7204),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              IconButton(
+                                style: IconButton.styleFrom(
+                                  backgroundColor: Colors.white,
+                                  foregroundColor: Colors.blueGrey,
+                                  side: const BorderSide(
+                                    color: Color(0xFFE2E8F0),
+                                  ),
+                                ),
+                                icon: const Icon(Icons.close),
+                                onPressed: () => Navigator.of(context).pop(),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                    Expanded(
+                      child: Container(
+                        width: double.infinity,
+                        color: const Color(0xFFF8FAFC),
+                        padding: const EdgeInsets.fromLTRB(24, 18, 24, 16),
+                        child: LayoutBuilder(
+                          builder: (context, constraints) {
+                            final summaryItems = [
+                              _buildSummaryMetric(
+                                label: 'Total Accounts',
+                                value: _userCountLabel(totalAccounts),
+                                icon: Icons.groups_2_outlined,
+                                accentColor: const Color(0xFF1D4ED8),
+                              ),
+                              _buildSummaryMetric(
+                                label: 'Farmer Accounts',
+                                value: _userCountLabel(farmerCount),
+                                icon: Icons.agriculture_outlined,
+                                accentColor: const Color(0xFF2D7204),
+                              ),
+                              _buildSummaryMetric(
+                                label: 'Expert Accounts',
+                                value: _userCountLabel(expertCount),
+                                icon: Icons.verified_user_outlined,
+                                accentColor: const Color(0xFF7C3AED),
+                              ),
+                              _buildSummaryMetric(
+                                label: 'Head Veterinarian',
+                                value: _userCountLabel(headVetCount),
+                                icon: Icons.health_and_safety_outlined,
+                                accentColor: const Color(0xFFDC2626),
+                              ),
+                              _buildSummaryMetric(
+                                label: 'Machine Learning Experts',
+                                value: _userCountLabel(mlExpertCount),
+                                icon: Icons.memory_rounded,
+                                accentColor: const Color(0xFF0F766E),
+                              ),
+                              _buildSummaryMetric(
+                                label: 'Cities/Municipalities with Users',
+                                value:
+                                    '$activeCities ${activeCities == 1 ? 'city/municipality' : 'cities/municipalities'}',
+                                icon: Icons.location_city_outlined,
+                                accentColor: const Color(0xFF0369A1),
+                              ),
+                            ];
+
+                            final summaryColumnCount =
+                                constraints.maxWidth >= 1080
+                                    ? 4
+                                    : constraints.maxWidth >= 760
+                                    ? 3
+                                    : constraints.maxWidth >= 520
+                                    ? 2
+                                    : 1;
+                            const summarySpacing = 12.0;
+                            final summaryItemWidth =
+                                (constraints.maxWidth -
+                                    ((summaryColumnCount - 1) *
+                                        summarySpacing)) /
+                                summaryColumnCount;
+
+                            final cityColumnCount =
+                                _cityDistributionColumnCount(
+                                  constraints.maxWidth,
+                                );
+                            const citySpacing = 10.0;
+                            final cityTileWidth =
+                                (constraints.maxWidth -
+                                    ((cityColumnCount - 1) * citySpacing)) /
+                                cityColumnCount;
+                            final useCompactHeader = constraints.maxWidth < 700;
+
+                            return SingleChildScrollView(
+                              physics: const ClampingScrollPhysics(),
+                              child: ConstrainedBox(
+                                constraints: BoxConstraints(
+                                  minHeight: constraints.maxHeight,
+                                ),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Wrap(
+                                      spacing: summarySpacing,
+                                      runSpacing: summarySpacing,
+                                      children:
+                                          summaryItems
+                                              .map(
+                                                (item) => SizedBox(
+                                                  width: summaryItemWidth,
+                                                  child: item,
+                                                ),
+                                              )
+                                              .toList(),
+                                    ),
+                                    if (usersWithoutCity > 0) ...[
+                                      const SizedBox(height: 14),
+                                      _buildUsersByCityWarning(
+                                        usersWithoutCity,
+                                      ),
+                                      const SizedBox(height: 16),
+                                    ],
+                                    if (useCompactHeader) ...[
+                                      Text(
+                                        'Municipality/City Distribution',
+                                        style: TextStyle(
+                                          fontSize: 13,
+                                          fontWeight: FontWeight.w700,
+                                          color: Colors.blueGrey.shade700,
+                                          letterSpacing: 0.2,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 4),
+                                      Text(
+                                        'Click a city card to view the users assigned there.',
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          color: Colors.blueGrey.shade500,
+                                        ),
+                                      ),
+                                    ] else ...[
+                                      Row(
+                                        children: [
+                                          Text(
+                                            'Municipality/City Distribution',
+                                            style: TextStyle(
+                                              fontSize: 13,
+                                              fontWeight: FontWeight.w700,
+                                              color: Colors.blueGrey.shade700,
+                                              letterSpacing: 0.2,
+                                            ),
+                                          ),
+                                          const Spacer(),
+                                          Text(
+                                            'Click a city card to view its users',
+                                            style: TextStyle(
+                                              fontSize: 12,
+                                              color: Colors.blueGrey.shade500,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ],
+                                    const SizedBox(height: 12),
+                                    Wrap(
+                                      spacing: citySpacing,
+                                      runSpacing: citySpacing,
+                                      children:
+                                          cityCounts
+                                              .map(
+                                                (item) => SizedBox(
+                                                  width: cityTileWidth,
+                                                  child: _buildCityCountTile(
+                                                    context,
+                                                    usersSnapshot,
+                                                    item,
+                                                  ),
+                                                ),
+                                              )
+                                              .toList(),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+                      ),
+                    ),
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 24,
+                        vertical: 16,
+                      ),
+                      decoration: const BoxDecoration(
+                        color: Colors.white,
+                        border: Border(
+                          top: BorderSide(color: Color(0xFFE2E8F0)),
+                        ),
+                      ),
+                      child: Wrap(
+                        alignment: WrapAlignment.spaceBetween,
+                        runSpacing: 12,
+                        spacing: 12,
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        children: [
+                          Text(
+                            'Total accounts: ${_userCountLabel(totalAccounts)}',
+                            style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                              color: Colors.blueGrey.shade700,
+                            ),
+                          ),
+                          Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              if (widget.onOpenUserManagement != null) ...[
+                                OutlinedButton.icon(
+                                  onPressed: () {
+                                    Navigator.of(context).pop();
+                                    widget.onOpenUserManagement?.call();
+                                  },
+                                  icon: const Icon(
+                                    Icons.people_outline_rounded,
+                                  ),
+                                  label: const Text('Open User Management'),
+                                ),
+                                const SizedBox(width: 10),
+                              ],
+                              FilledButton(
+                                onPressed: () => Navigator.of(context).pop(),
+                                child: const Text('Close'),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                );
+              },
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    final isClickable = widget.onTap != null;
     final UsersSnapshot? usersProvider = Provider.of<UsersSnapshot?>(context);
     final QuerySnapshot? usersSnapshot = usersProvider?.snapshot;
+    final isClickable = usersSnapshot != null;
+
     return MouseRegion(
       onEnter: (_) => _isHovered.value = true,
       onExit: (_) => _isHovered.value = false,
@@ -4744,7 +7289,10 @@ class _TotalUsersCardState extends State<TotalUsersCard> {
               borderRadius: BorderRadius.circular(12),
             ),
             child: InkWell(
-              onTap: widget.onTap,
+              onTap:
+                  usersSnapshot == null
+                      ? null
+                      : () => _showUsersByCityModal(context, usersSnapshot),
               borderRadius: BorderRadius.circular(12),
               child: Padding(
                 padding: const EdgeInsets.symmetric(

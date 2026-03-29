@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cloud_functions/cloud_functions.dart';
+import '../config/hidden_accounts.dart';
 
 class UserStore {
   static final FirebaseFirestore _firestore = FirebaseFirestore.instance;
@@ -14,8 +15,16 @@ class UserStore {
       final QuerySnapshot snapshot = await _firestore.collection('users').get();
       print('Found ${snapshot.docs.length} users');
 
-      return snapshot.docs.map((doc) {
-        final data = doc.data() as Map<String, dynamic>;
+      final users =
+          snapshot.docs.map((doc) {
+            final data = doc.data() as Map<String, dynamic>;
+            final role = (data['role'] ?? 'user').toString().toLowerCase();
+
+            // Hide specific head vet accounts from Admin UI.
+            if (role == 'head_veterinarian' &&
+                HiddenAccounts.hiddenUserIds.contains(doc.id)) {
+              return null;
+            }
         final String status = (data['status'] ?? 'pending').toString();
         final String registered = _formatDate(data['createdAt']);
         // Accepted display logic:
@@ -50,7 +59,9 @@ class UserStore {
           'profileImage': data['imageProfile'] ?? '',
           'createdAtRaw': createdAtRaw, // For sorting purposes
         };
-      }).toList();
+          }).whereType<Map<String, dynamic>>().toList();
+
+      return users;
     } catch (e) {
       print('Error fetching users: $e');
       return [];
@@ -63,7 +74,7 @@ class UserStore {
       print('Updating user $userId status to $status...');
       final docRef = _firestore.collection('users').doc(userId);
       final snap = await docRef.get();
-      final data = snap.data() as Map<String, dynamic>?;
+      final data = snap.data();
       final bool hasAccepted = (data?['acceptedAt']) != null;
       final Map<String, dynamic> payload = {'status': status};
       if (status.toLowerCase() == 'active' && !hasAccepted) {
@@ -100,7 +111,7 @@ class UserStore {
       try {
         final docRef = _firestore.collection('users').doc(userId);
         final current = await docRef.get();
-        final currentData = current.data() as Map<String, dynamic>?;
+        final currentData = current.data();
         final bool hasAccepted = (currentData?['acceptedAt']) != null;
         final String newStatus = (userData['status'] ?? '').toString();
         if (!hasAccepted && newStatus.toLowerCase() == 'active') {
