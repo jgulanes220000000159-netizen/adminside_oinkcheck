@@ -63,6 +63,7 @@ class _ReportsState extends State<Reports> {
   int _totalScansSubmitted = 0; // Scans submitted in period
   int _scansCompletedFromPeriod =
       0; // Scans submitted in period that got reviewed
+  final Set<String> _expandedDiseaseLocationItems = <String>{};
   // Dismiss state for completion rate warning animation/icon
   bool _completionWarningDismissed = false;
 
@@ -1692,6 +1693,7 @@ class _ReportsState extends State<Reports> {
                                       'type': 'export',
                                       'color': Colors.purple.value,
                                       'icon': Icons.picture_as_pdf.codePoint,
+                                      'iconKey': 'picture_as_pdf',
                                       'timestamp': FieldValue.serverTimestamp(),
                                     });
                               } catch (_) {
@@ -1919,10 +1921,11 @@ class _ReportsState extends State<Reports> {
 
   Widget _buildDiseaseLocationSourcesCard() {
     return Card(
-      elevation: 4,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      elevation: 0,
+      color: Colors.white,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
       child: Padding(
-        padding: const EdgeInsets.all(24),
+        padding: const EdgeInsets.all(22),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -1932,10 +1935,10 @@ class _ReportsState extends State<Reports> {
             ),
             const SizedBox(height: 8),
             const Text(
-              'City/Municipality and barangay origin of each disease for the selected report filters. Expand a disease to view the full breakdown.',
+              'Compact view of the leading city and barangay source for each disease.',
               style: TextStyle(fontSize: 13, color: Colors.black54),
             ),
-            const SizedBox(height: 20),
+            const SizedBox(height: 16),
             if (_diseaseLocationSources.isEmpty)
               const Text(
                 'No location data available for the selected range.',
@@ -1987,9 +1990,22 @@ class _ReportsState extends State<Reports> {
   String _caseCountLabel(int count) =>
       '$count ${count == 1 ? 'case' : 'cases'}';
 
+  bool _isDiseaseLocationExpanded(String name) {
+    return _expandedDiseaseLocationItems.contains(name);
+  }
+
+  void _toggleDiseaseLocationExpanded(String name) {
+    setState(() {
+      if (!_expandedDiseaseLocationItems.add(name)) {
+        _expandedDiseaseLocationItems.remove(name);
+      }
+    });
+  }
+
   Widget _buildDiseaseLocationSourceItem(Map<String, dynamic> item) {
     final name = (item['name'] ?? 'Unknown Disease').toString();
     final count = (item['count'] as num?)?.toInt() ?? 0;
+    final isExpanded = _isDiseaseLocationExpanded(name);
     final cities =
         (item['cities'] as List<dynamic>? ?? const <dynamic>[])
             .whereType<Map<String, dynamic>>()
@@ -1998,6 +2014,8 @@ class _ReportsState extends State<Reports> {
         (item['barangays'] as List<dynamic>? ?? const <dynamic>[])
             .whereType<Map<String, dynamic>>()
             .toList();
+    final topCity = _formatTopLocationSummary(cities);
+    final topBarangay = _formatTopLocationSummary(barangays);
 
     final content =
         count == 0
@@ -2007,7 +2025,6 @@ class _ReportsState extends State<Reports> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Expanded(
                         child: Text(
@@ -2015,124 +2032,124 @@ class _ReportsState extends State<Reports> {
                           style: const TextStyle(
                             fontSize: 15,
                             fontWeight: FontWeight.w700,
+                            color: Color(0xFF0F172A),
                           ),
                         ),
                       ),
-                      const SizedBox(width: 12),
+                      const SizedBox(width: 10),
                       _buildLocationSourceCountBadge(count),
                     ],
                   ),
                   const SizedBox(height: 8),
                   const Text(
-                    'No cases in selected range',
-                    style: TextStyle(fontSize: 13, color: Colors.black54),
+                    'No cases in selected range.',
+                    style: TextStyle(fontSize: 12.5, color: Colors.black54),
                   ),
                 ],
               ),
             )
-            : Theme(
-              data: Theme.of(
-                context,
-              ).copyWith(dividerColor: Colors.transparent),
-              child: ExpansionTile(
-                tilePadding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 6,
-                ),
-                childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-                backgroundColor: Colors.transparent,
-                collapsedBackgroundColor: Colors.transparent,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(14),
-                  side: BorderSide.none,
-                ),
-                collapsedShape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(14),
-                  side: BorderSide.none,
-                ),
-                title: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Expanded(
-                      child: Text(
-                        name,
-                        style: const TextStyle(
-                          fontSize: 15,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    _buildLocationSourceCountBadge(count),
-                  ],
-                ),
-                subtitle: Padding(
-                  padding: const EdgeInsets.only(top: 8),
+            : Material(
+              color: Colors.transparent,
+              child: InkWell(
+                borderRadius: BorderRadius.circular(18),
+                onTap: () => _toggleDiseaseLocationExpanded(name),
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      _buildLocationSourceSummaryLine(
-                        icon: Icons.location_city_outlined,
-                        label: 'Top city',
-                        value: _formatTopLocationSummary(cities),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              name,
+                              style: const TextStyle(
+                                fontSize: 15.5,
+                                fontWeight: FontWeight.w800,
+                                color: Color(0xFF0F172A),
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          _buildLocationSourceCountBadge(count),
+                          const SizedBox(width: 4),
+                          Icon(
+                            isExpanded
+                                ? Icons.keyboard_arrow_up_rounded
+                                : Icons.keyboard_arrow_down_rounded,
+                            size: 20,
+                            color: const Color(0xFF64748B),
+                          ),
+                        ],
                       ),
-                      const SizedBox(height: 4),
-                      _buildLocationSourceSummaryLine(
-                        icon: Icons.place_outlined,
+                      const SizedBox(height: 10),
+                      _buildCompactSourceRow(
+                        icon: Icons.place_rounded,
                         label: 'Top barangay',
-                        value: _formatTopLocationSummary(barangays),
+                        value: topBarangay,
+                        accentColor: const Color(0xFF0F766E),
                       ),
+                      const SizedBox(height: 6),
+                      _buildCompactSourceRow(
+                        icon: Icons.location_city_rounded,
+                        label: 'Top city',
+                        value: topCity,
+                        accentColor: const Color(0xFF1D4ED8),
+                      ),
+                      if (isExpanded) ...[
+                        const SizedBox(height: 12),
+                        const Divider(height: 1, color: Color(0xFFE2E8F0)),
+                        const SizedBox(height: 12),
+                        LayoutBuilder(
+                          builder: (context, constraints) {
+                            final cityGroup = _buildLocationSourceGroup(
+                              title: 'Cities',
+                              items: cities,
+                              accentColor: const Color(0xFF1D4ED8),
+                              icon: Icons.location_city_rounded,
+                            );
+                            final barangayGroup = _buildLocationSourceGroup(
+                              title: 'Barangays',
+                              items: barangays,
+                              accentColor: const Color(0xFF0F766E),
+                              icon: Icons.place_rounded,
+                            );
+
+                            if (constraints.maxWidth >= 760) {
+                              return Row(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Expanded(child: barangayGroup),
+                                  const SizedBox(width: 10),
+                                  Expanded(child: cityGroup),
+                                ],
+                              );
+                            }
+
+                            return Column(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+                                barangayGroup,
+                                const SizedBox(height: 10),
+                                cityGroup,
+                              ],
+                            );
+                          },
+                        ),
+                      ],
                     ],
                   ),
                 ),
-                children: [
-                  const Divider(height: 1, color: Color(0xFFE2E8F0)),
-                  const SizedBox(height: 14),
-                  LayoutBuilder(
-                    builder: (context, constraints) {
-                      final cityGroup = _buildLocationSourceGroup(
-                        title: 'City/Municipality',
-                        items: cities,
-                        accentColor: const Color(0xFF1D4ED8),
-                        icon: Icons.location_city,
-                      );
-                      final barangayGroup = _buildLocationSourceGroup(
-                        title: 'Barangay',
-                        items: barangays,
-                        accentColor: const Color(0xFF0F766E),
-                        icon: Icons.place,
-                      );
-
-                      if (constraints.maxWidth >= 760) {
-                        return Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Expanded(child: cityGroup),
-                            const SizedBox(width: 12),
-                            Expanded(child: barangayGroup),
-                          ],
-                        );
-                      }
-
-                      return Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          cityGroup,
-                          const SizedBox(height: 12),
-                          barangayGroup,
-                        ],
-                      );
-                    },
-                  ),
-                ],
               ),
             );
 
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
       decoration: BoxDecoration(
-        color: const Color(0xFFF8FAFC),
-        borderRadius: BorderRadius.circular(14),
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
         border: Border.all(color: const Color(0xFFE2E8F0)),
       ),
       child: content,
@@ -2145,11 +2162,14 @@ class _ReportsState extends State<Reports> {
     required Color accentColor,
     required IconData icon,
   }) {
+    final int topCount =
+        items.isEmpty ? 0 : ((items.first['count'] as num?)?.toInt() ?? 0);
+
     return Container(
-      padding: const EdgeInsets.all(14),
+      padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
+        color: const Color(0xFFF8FAFC),
+        borderRadius: BorderRadius.circular(14),
         border: Border.all(color: const Color(0xFFE2E8F0)),
       ),
       child: Column(
@@ -2163,10 +2183,18 @@ class _ReportsState extends State<Reports> {
                 title,
                 style: const TextStyle(
                   fontSize: 13,
-                  fontWeight: FontWeight.w700,
+                  fontWeight: FontWeight.w800,
+                  color: Color(0xFF0F172A),
                 ),
               ),
             ],
+          ),
+          const SizedBox(height: 6),
+          Text(
+            items.isEmpty
+                ? 'No recorded locations'
+                : 'Ranked by number of cases for this disease.',
+            style: const TextStyle(fontSize: 12, color: Color(0xFF64748B)),
           ),
           const SizedBox(height: 10),
           if (items.isEmpty)
@@ -2175,44 +2203,82 @@ class _ReportsState extends State<Reports> {
               style: TextStyle(fontSize: 12, color: Colors.black45),
             )
           else
-            ...List.generate(items.length, (index) {
-              final location = items[index];
-              final locationName =
+            ...items.asMap().entries.map((entry) {
+              final int index = entry.key;
+              final Map<String, dynamic> location = entry.value;
+              final String locationName =
                   (location['name'] ?? 'Unknown Location').toString();
-              final count = (location['count'] as num?)?.toInt() ?? 0;
+              final int count = (location['count'] as num?)?.toInt() ?? 0;
+              final double ratio =
+                  topCount <= 0 ? 0.0 : (count / topCount).clamp(0, 1).toDouble();
 
               return Padding(
                 padding: EdgeInsets.only(
-                  bottom: index == items.length - 1 ? 0 : 8,
+                  bottom: index == items.length - 1 ? 0 : 6,
                 ),
                 child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 10,
-                  ),
+                  padding: const EdgeInsets.fromLTRB(10, 10, 10, 8),
                   decoration: BoxDecoration(
-                    color: accentColor.withValues(alpha: 0.06),
-                    borderRadius: BorderRadius.circular(10),
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: accentColor.withValues(alpha: 0.12),
+                    ),
                   ),
-                  child: Row(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Expanded(
-                        child: Text(
-                          locationName,
-                          style: const TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
-                            color: Colors.black87,
+                      Row(
+                        children: [
+                          Container(
+                            width: 22,
+                            height: 22,
+                            alignment: Alignment.center,
+                            decoration: BoxDecoration(
+                              color: accentColor.withValues(alpha: 0.10),
+                              shape: BoxShape.circle,
+                            ),
+                            child: Text(
+                              '${index + 1}',
+                              style: TextStyle(
+                                fontSize: 10,
+                                fontWeight: FontWeight.w800,
+                                color: accentColor,
+                              ),
+                            ),
                           ),
-                        ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Text(
+                              locationName,
+                              style: const TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w700,
+                                color: Color(0xFF0F172A),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Text(
+                            _caseCountLabel(count),
+                            style: TextStyle(
+                              fontSize: 11.5,
+                              fontWeight: FontWeight.w700,
+                              color: accentColor,
+                            ),
+                          ),
+                        ],
                       ),
-                      const SizedBox(width: 12),
-                      Text(
-                        _caseCountLabel(count),
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                          color: accentColor,
+                      const SizedBox(height: 10),
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(999),
+                        child: LinearProgressIndicator(
+                          minHeight: 5,
+                          value: ratio,
+                          backgroundColor: accentColor.withValues(alpha: 0.08),
+                          valueColor: AlwaysStoppedAnimation<Color>(
+                            accentColor,
+                          ),
                         ),
                       ),
                     ],
@@ -2244,32 +2310,45 @@ class _ReportsState extends State<Reports> {
     );
   }
 
-  Widget _buildLocationSourceSummaryLine({
+  Widget _buildCompactSourceRow({
     required IconData icon,
+    required Color accentColor,
     required String label,
     required String value,
   }) {
-    return Row(
-      children: [
-        Icon(icon, size: 14, color: Colors.blueGrey.shade500),
-        const SizedBox(width: 6),
-        Text(
-          '$label:',
-          style: TextStyle(
-            fontSize: 12,
-            fontWeight: FontWeight.w600,
-            color: Colors.blueGrey.shade700,
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
+      decoration: BoxDecoration(
+        color: accentColor.withValues(alpha: 0.06),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        children: [
+          Icon(icon, size: 15, color: accentColor),
+          const SizedBox(width: 8),
+          Text(
+            '$label:',
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+              color: accentColor,
+            ),
           ),
-        ),
-        const SizedBox(width: 6),
-        Expanded(
-          child: Text(
-            value,
-            style: const TextStyle(fontSize: 12, color: Colors.black87),
-            overflow: TextOverflow.ellipsis,
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              value,
+              style: const TextStyle(
+                fontSize: 12.5,
+                fontWeight: FontWeight.w600,
+                color: Color(0xFF0F172A),
+              ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 

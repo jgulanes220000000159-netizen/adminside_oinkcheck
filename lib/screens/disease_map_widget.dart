@@ -1,13 +1,16 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_map/flutter_map.dart';
+import 'package:flutter_map/src/layer/shared/mobile_layer_transformer.dart';
 import 'package:flutter_map_cancellable_tile_provider/flutter_map_cancellable_tile_provider.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
+import 'dart:ui' as ui;
 import 'dart:math' as math;
 import '../services/scan_requests_service.dart';
 
-// Geocoding service for city coordinates
+// Geocoding service for city/barangay coordinates
 class GeocodingService {
   Future<Map<String, double>?> geocodeCity({
     required String cityMunicipality,
@@ -44,19 +47,59 @@ class GeocodingService {
       return null;
     }
   }
+
+  Future<Map<String, double>?> geocodeBarangay({
+    required String barangay,
+    required String cityMunicipality,
+    required String province,
+  }) async {
+    final b = barangay.trim();
+    final c = cityMunicipality.trim();
+    final p = province.trim();
+    if (b.isEmpty || c.isEmpty || p.isEmpty) return null;
+
+    final q = '$b, $c, $p, Philippines';
+    final uri = Uri.https('nominatim.openstreetmap.org', '/search', {
+      'q': q,
+      'format': 'json',
+      'limit': '1',
+    });
+
+    try {
+      final resp = await http
+          .get(
+            uri,
+            headers: const {'User-Agent': 'OinkCheck/1.0 (disease-map-barangay)'},
+          )
+          .timeout(const Duration(seconds: 6));
+
+      if (resp.statusCode != 200) return null;
+      final List<dynamic> data = jsonDecode(resp.body) as List<dynamic>;
+      if (data.isEmpty) return null;
+      final m = data.first as Map<String, dynamic>;
+      final lat = double.tryParse(m['lat']?.toString() ?? '');
+      final lng = double.tryParse(m['lon']?.toString() ?? '');
+      if (lat == null || lng == null) return null;
+      return {'lat': lat, 'lng': lng};
+    } catch (_) {
+      return null;
+    }
+  }
 }
 
 // Disease aggregation class
-class _CityAgg {
-  _CityAgg({
+class _LocationAgg {
+  _LocationAgg({
     required this.diseaseKey,
     required this.province,
     required this.city,
+    required this.barangay,
   });
 
   final String diseaseKey;
   final String province;
   final String city;
+  final String barangay;
   int count = 0; // Total case count (for heatmap intensity)
   double? lat;
   double? lng;
@@ -84,6 +127,7 @@ class _DiseaseMapWidgetState extends State<DiseaseMapWidget>
   final MapController _mapController = MapController();
   List<Marker> _markers = [];
   List<CircleMarker> _heatmapCircles = [];
+  List<Polygon> _ddnPolygons = [];
   String? _selectedDisease;
   bool _isLoading = true;
 
@@ -110,6 +154,7 @@ class _DiseaseMapWidgetState extends State<DiseaseMapWidget>
   @override
   void initState() {
     super.initState();
+    _loadDavaoDelNorteBoundary();
     // Load data on first init
     _loadDiseaseLocations();
   }
@@ -208,6 +253,84 @@ class _DiseaseMapWidgetState extends State<DiseaseMapWidget>
     }
   }
 
+  Future<void> _loadDavaoDelNorteBoundary() async {
+    try {
+      final rawGeoJson = await rootBundle.loadString('assets/DDN.geojson');
+      final Map<String, dynamic> geoJson =
+          jsonDecode(rawGeoJson) as Map<String, dynamic>;
+      final List<dynamic> features =
+          geoJson['features'] as List<dynamic>? ?? const <dynamic>[];
+
+      final List<Polygon> polygons = [];
+      for (final feature in features) {
+        if (feature is! Map) continue;
+        final geometry = feature['geometry'];
+        if (geometry is! Map) continue;
+
+        final geometryType = (geometry['type'] ?? '').toString();
+        final coordinates = geometry['coordinates'];
+
+        if (geometryType == 'Polygon' && coordinates is List) {
+          final polygon = _polygonFromRings(coordinates);
+          if (polygon != null) polygons.add(polygon);
+        } else if (geometryType == 'MultiPolygon' && coordinates is List) {
+          for (final polygonCoords in coordinates) {
+            if (polygonCoords is List) {
+              final polygon = _polygonFromRings(polygonCoords);
+              if (polygon != null) polygons.add(polygon);
+            }
+          }
+        }
+      }
+
+      if (!mounted) return;
+      setState(() {
+        _ddnPolygons = polygons;
+      });
+    } catch (_) {
+      // Keep the map working even if the boundary asset fails to load.
+    }
+  }
+
+  Polygon? _polygonFromRings(List<dynamic> rings) {
+    if (rings.isEmpty) return null;
+
+    final outerRing = _latLngRingFromDynamic(rings.first);
+    if (outerRing.length < 3) return null;
+
+    final holeRings = <List<LatLng>>[];
+    for (final hole in rings.skip(1)) {
+      final holeRing = _latLngRingFromDynamic(hole);
+      if (holeRing.length >= 3) {
+        holeRings.add(holeRing);
+      }
+    }
+
+    return Polygon(
+      points: outerRing,
+      holePointsList: holeRings.isEmpty ? null : holeRings,
+      color: const Color(0xFF2D7204).withOpacity(0.10),
+      borderColor: const Color(0xFF111111),
+      borderStrokeWidth: 1.2,
+    );
+  }
+
+  List<LatLng> _latLngRingFromDynamic(dynamic ring) {
+    if (ring is! List) return const <LatLng>[];
+
+    final points = <LatLng>[];
+    for (final coordinate in ring) {
+      if (coordinate is List && coordinate.length >= 2) {
+        final lng = (coordinate[0] as num?)?.toDouble();
+        final lat = (coordinate[1] as num?)?.toDouble();
+        if (lat != null && lng != null) {
+          points.add(LatLng(lat, lng));
+        }
+      }
+    }
+    return points;
+  }
+
   Future<void> _loadDiseaseLocations() async {
     // When no disease selected, show empty map — user must select a disease first
     if (_selectedDisease == null) {
@@ -254,8 +377,8 @@ class _DiseaseMapWidgetState extends State<DiseaseMapWidget>
       final completed =
           filtered.where((r) => (r['status'] ?? '') == 'completed').toList();
 
-      // Aggregate by city - start fresh
-      final Map<String, _CityAgg> agg = {};
+      // Aggregate by barangay - start fresh
+      final Map<String, _LocationAgg> agg = {};
       final geocoder = GeocodingService();
 
       // Process each completed report
@@ -276,6 +399,7 @@ class _DiseaseMapWidgetState extends State<DiseaseMapWidget>
         // Get city and province first for filtering
         final province = (data['province'] ?? '').toString().trim();
         final city = (data['cityMunicipality'] ?? '').toString().trim();
+        final barangay = (data['barangay'] ?? '').toString().trim();
 
         if (province.isEmpty || city.isEmpty) continue;
 
@@ -328,54 +452,56 @@ class _DiseaseMapWidgetState extends State<DiseaseMapWidget>
           );
 
           // At this point, we're 100% certain this report has the selected disease
-          // Only now do we create an aggregation entry for this city+disease combination
+          // Only now do we create an aggregation entry for this barangay+disease combination
           final aggKey =
-              '${city.toLowerCase()}|${province.toLowerCase()}|$_selectedDisease';
+              '${barangay.toLowerCase()}|${city.toLowerCase()}|${province.toLowerCase()}|$_selectedDisease';
 
-          final cityAgg = agg.putIfAbsent(
+          final locationAgg = agg.putIfAbsent(
             aggKey,
-            () => _CityAgg(
+            () => _LocationAgg(
               diseaseKey: _selectedDisease!,
               province: province,
               city: city,
+              barangay: barangay,
             ),
           );
 
           // Double-check: the aggregation entry MUST have the correct disease key
           assert(
-            cityAgg.diseaseKey == _selectedDisease,
-            'Aggregation disease key mismatch: expected $_selectedDisease, got ${cityAgg.diseaseKey}',
+            locationAgg.diseaseKey == _selectedDisease,
+            'Aggregation disease key mismatch: expected $_selectedDisease, got ${locationAgg.diseaseKey}',
           );
 
           // Only increment if disease key matches (should always be true at this point)
-          if (cityAgg.diseaseKey == _selectedDisease) {
-            cityAgg.count++;
+          if (locationAgg.diseaseKey == _selectedDisease) {
+            locationAgg.count++;
           }
         } else {
-          // If no disease filter, aggregate by city for traditional heatmap
+          // If no disease filter, aggregate by barangay for traditional heatmap
           // Total intensity = sum of all reports (each report = 1 case)
           if (diseaseKeysInReport.isEmpty) {
             continue;
           }
-          // Group by city only when showing all diseases (traditional heatmap)
-          final aggKey = '${city.toLowerCase()}|${province.toLowerCase()}';
+          final aggKey =
+              '${barangay.toLowerCase()}|${city.toLowerCase()}|${province.toLowerCase()}';
 
-          final cityAgg = agg.putIfAbsent(
+          final locationAgg = agg.putIfAbsent(
             aggKey,
-            () => _CityAgg(
+            () => _LocationAgg(
               diseaseKey: 'all_diseases', // Special key for "All" mode
               province: province,
               city: city,
+              barangay: barangay,
             ),
           );
 
           // Increment total count (each report = 1 case for heatmap intensity)
-          cityAgg.count++;
+          locationAgg.count++;
 
           // Track disease breakdown for info display
           for (final diseaseKey in diseaseKeysInReport) {
-            cityAgg.diseaseBreakdown[diseaseKey] =
-                (cityAgg.diseaseBreakdown[diseaseKey] ?? 0) + 1;
+            locationAgg.diseaseBreakdown[diseaseKey] =
+                (locationAgg.diseaseBreakdown[diseaseKey] ?? 0) + 1;
           }
         }
       }
@@ -383,17 +509,17 @@ class _DiseaseMapWidgetState extends State<DiseaseMapWidget>
       // CRITICAL: Final cleanup - remove any aggregation entries that don't match filters
       final keysToRemove = <String>[];
       for (final entry in agg.entries) {
-        final cityAgg = entry.value;
+        final locationAgg = entry.value;
 
         // Remove entries with zero count
-        if (cityAgg.count <= 0) {
+        if (locationAgg.count <= 0) {
           keysToRemove.add(entry.key);
           continue;
         }
 
         // If filtering by disease, ensure disease key matches exactly
         if (_selectedDisease != null) {
-          if (cityAgg.diseaseKey != _selectedDisease) {
+          if (locationAgg.diseaseKey != _selectedDisease) {
             keysToRemove.add(entry.key);
             continue;
           }
@@ -401,7 +527,7 @@ class _DiseaseMapWidgetState extends State<DiseaseMapWidget>
 
         // If filtering by city, ensure city matches exactly
         if (widget.selectedCity != 'All') {
-          if (cityAgg.city.toLowerCase().trim() !=
+          if (locationAgg.city.toLowerCase().trim() !=
               widget.selectedCity.toLowerCase().trim()) {
             keysToRemove.add(entry.key);
             continue;
@@ -414,10 +540,18 @@ class _DiseaseMapWidgetState extends State<DiseaseMapWidget>
         agg.remove(key);
       }
 
-      // Geocode cities
+      // Geocode barangays, with city fallback if barangay lookup fails
       for (final a in agg.values) {
         if (a.province.trim().isEmpty || a.city.trim().isEmpty) continue;
-        final geo = await geocoder.geocodeCity(
+        Map<String, double>? geo;
+        if (a.barangay.trim().isNotEmpty) {
+          geo = await geocoder.geocodeBarangay(
+            barangay: a.barangay,
+            cityMunicipality: a.city,
+            province: a.province,
+          );
+        }
+        geo ??= await geocoder.geocodeCity(
           cityMunicipality: a.city,
           province: a.province,
         );
@@ -427,7 +561,7 @@ class _DiseaseMapWidgetState extends State<DiseaseMapWidget>
         }
       }
 
-      // Create heatmap circles - only for cities that match ALL filters
+      // Create heatmap circles - only for barangays that match ALL filters
       final heatmapCircles = <CircleMarker>[];
       final markers = <Marker>[]; // Keep markers for click interaction
 
@@ -456,7 +590,7 @@ class _DiseaseMapWidgetState extends State<DiseaseMapWidget>
         if (widget.selectedCity != 'All') {
           if (a.city.toLowerCase().trim() !=
               widget.selectedCity.toLowerCase().trim()) {
-            continue; // Skip cities that don't match
+            continue; // Skip barangays from cities that don't match
           }
         }
 
@@ -583,6 +717,7 @@ class _DiseaseMapWidgetState extends State<DiseaseMapWidget>
                     'All Diseases',
                     count,
                     percentageOfCompleted: percentageOfCompleted,
+                    barangay: a.barangay,
                     city: a.city,
                     province: a.province,
                     diseaseBreakdown: diseaseList,
@@ -592,6 +727,7 @@ class _DiseaseMapWidgetState extends State<DiseaseMapWidget>
                     a.diseaseKey,
                     count,
                     percentageOfCompleted: percentageOfCompleted,
+                    barangay: a.barangay,
                     city: a.city,
                     province: a.province,
                   );
@@ -633,6 +769,7 @@ class _DiseaseMapWidgetState extends State<DiseaseMapWidget>
     String diseaseKey,
     int count, {
     required double percentageOfCompleted,
+    required String barangay,
     required String city,
     required String province,
     String? diseaseBreakdown,
@@ -649,8 +786,8 @@ class _DiseaseMapWidgetState extends State<DiseaseMapWidget>
             content: SingleChildScrollView(
               child: Text(
                 diseaseBreakdown != null
-                    ? 'Location: $city, $province\nTotal Cases: $count\nCompleted Scan Share: ${percentageOfCompleted.toStringAsFixed(1)}%\nIntensity: ${_getIntensityLabelFromPercentage(percentageOfCompleted)}\n\nDisease Breakdown:\n$diseaseBreakdown'
-                    : 'Location: $city, $province\nCases: $count\nCompleted Scan Share: ${percentageOfCompleted.toStringAsFixed(1)}%\nIntensity: ${_getIntensityLabelFromPercentage(percentageOfCompleted)}',
+                    ? 'Location: ${barangay.isEmpty ? 'Unspecified Barangay' : barangay}, $city, $province\nTotal Cases: $count\nCompleted Scan Share: ${percentageOfCompleted.toStringAsFixed(1)}%\nIntensity: ${_getIntensityLabelFromPercentage(percentageOfCompleted)}\n\nDisease Breakdown:\n$diseaseBreakdown'
+                    : 'Location: ${barangay.isEmpty ? 'Unspecified Barangay' : barangay}, $city, $province\nCases: $count\nCompleted Scan Share: ${percentageOfCompleted.toStringAsFixed(1)}%\nIntensity: ${_getIntensityLabelFromPercentage(percentageOfCompleted)}',
                 style: const TextStyle(fontSize: 16),
               ),
             ),
@@ -805,8 +942,10 @@ class _DiseaseMapWidgetState extends State<DiseaseMapWidget>
                   : FlutterMap(
                     mapController: _mapController,
                     options: MapOptions(
-                      initialCenter: _davaoDelNorteBounds.center,
-                      initialZoom: 9.0,
+                      initialCameraFit: CameraFit.bounds(
+                        bounds: _davaoDelNorteBounds,
+                        padding: const EdgeInsets.all(32),
+                      ),
                       minZoom: 5.0,
                       maxZoom: 18.0,
                       onMapReady: () {
@@ -827,6 +966,14 @@ class _DiseaseMapWidgetState extends State<DiseaseMapWidget>
                         userAgentPackageName: 'com.example.capstone',
                         tileProvider: CancellableNetworkTileProvider(),
                       ),
+                      if (_ddnPolygons.isNotEmpty)
+                        _DdnOutsideMaskLayer(
+                          polygons: _ddnPolygons,
+                        ),
+                      if (_ddnPolygons.isNotEmpty)
+                        PolygonLayer(
+                          polygons: _ddnPolygons,
+                        ),
                       CircleLayer(circles: _heatmapCircles),
                       MarkerLayer(markers: _markers),
                     ],
@@ -849,5 +996,101 @@ class _DiseaseMapWidgetState extends State<DiseaseMapWidget>
         Text(label, style: const TextStyle(fontSize: 12)),
       ],
     );
+  }
+}
+
+class _DdnOutsideMaskLayer extends StatelessWidget {
+  const _DdnOutsideMaskLayer({
+    required this.polygons,
+  });
+
+  final List<Polygon> polygons;
+
+  @override
+  Widget build(BuildContext context) {
+    final camera = MapCamera.of(context);
+    final size = Size(camera.size.x, camera.size.y);
+
+    return MobileLayerTransformer(
+      child: IgnorePointer(
+        child: SizedBox(
+          width: size.width,
+          height: size.height,
+          child: CustomPaint(
+            painter: _DdnOutsideMaskPainter(
+              camera: camera,
+              polygons: polygons,
+              maskColor: const Color(0xFFF8FAFC).withOpacity(0.78),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _DdnOutsideMaskPainter extends CustomPainter {
+  _DdnOutsideMaskPainter({
+    required this.camera,
+    required this.polygons,
+    required this.maskColor,
+  });
+
+  final MapCamera camera;
+  final List<Polygon> polygons;
+  final Color maskColor;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final ui.Path path =
+        ui.Path()
+          ..fillType = PathFillType.evenOdd
+          ..addRect(Offset.zero & size);
+
+    final origin = camera.pixelOrigin;
+    final originOffset = Offset(origin.x.toDouble(), origin.y.toDouble());
+
+    for (final polygon in polygons) {
+      _addRing(path, polygon.points, originOffset);
+      final holes = polygon.holePointsList;
+      if (holes != null) {
+        for (final hole in holes) {
+          _addRing(path, hole, originOffset);
+        }
+      }
+    }
+
+    final paint =
+        Paint()
+          ..color = maskColor
+          ..style = PaintingStyle.fill
+          ..isAntiAlias = true;
+
+    canvas.drawPath(path, paint);
+  }
+
+  void _addRing(ui.Path path, List<LatLng> points, Offset origin) {
+    if (points.length < 3) return;
+
+    final offsets = <Offset>[];
+    for (final point in points) {
+      final projected = camera.project(point);
+      offsets.add(
+        Offset(
+          projected.x.toDouble() - origin.dx,
+          projected.y.toDouble() - origin.dy,
+        ),
+      );
+    }
+
+    final ui.Path polygonPath = ui.Path()..addPolygon(offsets, true);
+    path.addPath(polygonPath, Offset.zero);
+  }
+
+  @override
+  bool shouldRepaint(covariant _DdnOutsideMaskPainter oldDelegate) {
+    return oldDelegate.camera != camera ||
+        oldDelegate.polygons != polygons ||
+        oldDelegate.maskColor != maskColor;
   }
 }

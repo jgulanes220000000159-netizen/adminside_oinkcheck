@@ -876,7 +876,7 @@ class _TotalReportsReviewedCardState extends State<TotalReportsReviewedCard> {
               borderRadius: BorderRadius.circular(14),
             ),
             child: Icon(
-              Icons.person_outline_rounded,
+              Icons.person,
               color: accentColor,
               size: 22,
             ),
@@ -927,13 +927,13 @@ class _TotalReportsReviewedCardState extends State<TotalReportsReviewedCard> {
                   children: [
                     if (barangay.isNotEmpty)
                       _buildUserMetaPill(
-                        icon: Icons.place_outlined,
+                        icon: Icons.place,
                         label: barangay,
                         accentColor: const Color(0xFF0369A1),
                       ),
                     if (phone.isNotEmpty)
                       _buildUserMetaPill(
-                        icon: Icons.phone_outlined,
+                        icon: Icons.phone,
                         label: phone,
                         accentColor: const Color(0xFF475569),
                       ),
@@ -944,7 +944,7 @@ class _TotalReportsReviewedCardState extends State<TotalReportsReviewedCard> {
                   Row(
                     children: [
                       Icon(
-                        Icons.email_outlined,
+                        Icons.email,
                         size: 14,
                         color: Colors.blueGrey.shade500,
                       ),
@@ -1028,7 +1028,7 @@ class _TotalReportsReviewedCardState extends State<TotalReportsReviewedCard> {
                           borderRadius: BorderRadius.circular(18),
                         ),
                         child: const Icon(
-                          Icons.location_city_rounded,
+                          Icons.place,
                           size: 30,
                           color: Color(0xFF1D4ED8),
                         ),
@@ -1121,7 +1121,7 @@ class _TotalReportsReviewedCardState extends State<TotalReportsReviewedCard> {
                                         borderRadius: BorderRadius.circular(18),
                                       ),
                                       child: const Icon(
-                                        Icons.group_off_outlined,
+                                        Icons.group_off,
                                         color: Color(0xFF1D4ED8),
                                         size: 30,
                                       ),
@@ -1156,34 +1156,34 @@ class _TotalReportsReviewedCardState extends State<TotalReportsReviewedCard> {
                                   runSpacing: 10,
                                   children: [
                                     _buildUserMetaPill(
-                                      icon: Icons.groups_2_outlined,
+                                      icon: Icons.people,
                                       label: _userCountLabel(cityUsers.length),
                                       accentColor: const Color(0xFF1D4ED8),
                                     ),
                                     if (farmerCount > 0)
                                       _buildUserMetaPill(
-                                        icon: Icons.agriculture_outlined,
+                                        icon: Icons.person,
                                         label:
                                             '$farmerCount ${farmerCount == 1 ? 'farmer' : 'farmers'}',
                                         accentColor: const Color(0xFF2D7204),
                                       ),
                                     if (expertCount > 0)
                                       _buildUserMetaPill(
-                                        icon: Icons.verified_user_outlined,
+                                        icon: Icons.verified_user,
                                         label:
                                             '$expertCount ${expertCount == 1 ? 'expert' : 'experts'}',
                                         accentColor: const Color(0xFF7C3AED),
                                       ),
                                     if (headVetCount > 0)
                                       _buildUserMetaPill(
-                                        icon: Icons.health_and_safety_outlined,
+                                        icon: Icons.favorite,
                                         label:
                                             '$headVetCount ${headVetCount == 1 ? 'head vet' : 'head vets'}',
                                         accentColor: const Color(0xFFDC2626),
                                       ),
                                     if (mlExpertCount > 0)
                                       _buildUserMetaPill(
-                                        icon: Icons.memory_rounded,
+                                        icon: Icons.settings,
                                         label:
                                             '$mlExpertCount ${mlExpertCount == 1 ? 'ML expert' : 'ML experts'}',
                                         accentColor: const Color(0xFF0F766E),
@@ -1191,7 +1191,7 @@ class _TotalReportsReviewedCardState extends State<TotalReportsReviewedCard> {
                                     if (adminCount > 0)
                                       _buildUserMetaPill(
                                         icon:
-                                            Icons.admin_panel_settings_outlined,
+                                            Icons.admin_panel_settings,
                                         label:
                                             '$adminCount ${adminCount == 1 ? 'admin' : 'admins'}',
                                         accentColor: const Color(0xFFB45309),
@@ -1293,7 +1293,7 @@ class _TotalReportsReviewedCardState extends State<TotalReportsReviewedCard> {
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: Icon(
-                    Icons.location_city_rounded,
+                    Icons.place,
                     color:
                         hasUsers
                             ? const Color(0xFF2D7204)
@@ -1481,7 +1481,7 @@ class _TotalReportsReviewedCardState extends State<TotalReportsReviewedCard> {
                               borderRadius: BorderRadius.circular(18),
                             ),
                             child: const Icon(
-                              Icons.people_alt_rounded,
+                              Icons.people,
                               size: 30,
                               color: Color(0xFF1D4ED8),
                             ),
@@ -1559,38 +1559,38 @@ class _TotalReportsReviewedCardState extends State<TotalReportsReviewedCard> {
                                     _buildSummaryMetric(
                                       label: 'Total Accounts',
                                       value: _userCountLabel(totalAccounts),
-                                      icon: Icons.groups_2_outlined,
+                                      icon: Icons.people,
                                       accentColor: const Color(0xFF1D4ED8),
                                     ),
                                     _buildSummaryMetric(
                                       label: 'Farmer Accounts',
                                       value: _userCountLabel(farmerCount),
-                                      icon: Icons.agriculture_outlined,
+                                      icon: Icons.person,
                                       accentColor: const Color(0xFF2D7204),
                                     ),
                                     _buildSummaryMetric(
                                       label: 'Expert Accounts',
                                       value: _userCountLabel(expertCount),
-                                      icon: Icons.verified_user_outlined,
+                                      icon: Icons.verified_user,
                                       accentColor: const Color(0xFF7C3AED),
                                     ),
                                     _buildSummaryMetric(
                                       label: 'Head Veterinarian',
                                       value: _userCountLabel(headVetCount),
-                                      icon: Icons.health_and_safety_outlined,
+                                      icon: Icons.favorite,
                                       accentColor: const Color(0xFFDC2626),
                                     ),
                                     _buildSummaryMetric(
                                       label: 'Machine Learning Experts',
                                       value: _userCountLabel(mlExpertCount),
-                                      icon: Icons.memory_rounded,
+                                      icon: Icons.settings,
                                       accentColor: const Color(0xFF0F766E),
                                     ),
                                     _buildSummaryMetric(
                                       label: 'Cities with Users',
                                       value:
                                           '$activeCities ${activeCities == 1 ? 'city' : 'cities'}',
-                                      icon: Icons.location_city_outlined,
+                                      icon: Icons.location_city,
                                       accentColor: const Color(0xFF0369A1),
                                     ),
                                   ];
@@ -5004,6 +5004,7 @@ class _ReportsModalContentState extends State<ReportsModalContent>
           'type': 'delete',
           'color': Colors.red.value,
           'icon': Icons.delete.codePoint,
+          'iconKey': 'delete',
           'timestamp': FieldValue.serverTimestamp(),
         });
       } catch (e) {
@@ -6399,7 +6400,7 @@ class _TotalUsersCardState extends State<TotalUsersCard> {
               borderRadius: BorderRadius.circular(14),
             ),
             child: Icon(
-              Icons.person_outline_rounded,
+              Icons.person,
               color: accentColor,
               size: 22,
             ),
@@ -6450,13 +6451,13 @@ class _TotalUsersCardState extends State<TotalUsersCard> {
                   children: [
                     if (barangay.isNotEmpty)
                       _buildUserMetaPill(
-                        icon: Icons.place_outlined,
+                        icon: Icons.place,
                         label: barangay,
                         accentColor: const Color(0xFF0369A1),
                       ),
                     if (phone.isNotEmpty)
                       _buildUserMetaPill(
-                        icon: Icons.phone_outlined,
+                        icon: Icons.phone,
                         label: phone,
                         accentColor: const Color(0xFF475569),
                       ),
@@ -6467,7 +6468,7 @@ class _TotalUsersCardState extends State<TotalUsersCard> {
                   Row(
                     children: [
                       Icon(
-                        Icons.email_outlined,
+                        Icons.email,
                         size: 14,
                         color: Colors.blueGrey.shade500,
                       ),
@@ -6551,7 +6552,7 @@ class _TotalUsersCardState extends State<TotalUsersCard> {
                           borderRadius: BorderRadius.circular(18),
                         ),
                         child: const Icon(
-                          Icons.location_city_rounded,
+                          Icons.place,
                           size: 30,
                           color: Color(0xFF1D4ED8),
                         ),
@@ -6644,7 +6645,7 @@ class _TotalUsersCardState extends State<TotalUsersCard> {
                                         borderRadius: BorderRadius.circular(18),
                                       ),
                                       child: const Icon(
-                                        Icons.group_off_outlined,
+                                        Icons.group_off,
                                         color: Color(0xFF1D4ED8),
                                         size: 30,
                                       ),
@@ -6679,34 +6680,34 @@ class _TotalUsersCardState extends State<TotalUsersCard> {
                                   runSpacing: 10,
                                   children: [
                                     _buildUserMetaPill(
-                                      icon: Icons.groups_2_outlined,
+                                      icon: Icons.people,
                                       label: _userCountLabel(cityUsers.length),
                                       accentColor: const Color(0xFF1D4ED8),
                                     ),
                                     if (farmerCount > 0)
                                       _buildUserMetaPill(
-                                        icon: Icons.agriculture_outlined,
+                                        icon: Icons.person,
                                         label:
                                             '$farmerCount ${farmerCount == 1 ? 'farmer' : 'farmers'}',
                                         accentColor: const Color(0xFF2D7204),
                                       ),
                                     if (expertCount > 0)
                                       _buildUserMetaPill(
-                                        icon: Icons.verified_user_outlined,
+                                        icon: Icons.verified_user,
                                         label:
                                             '$expertCount ${expertCount == 1 ? 'expert' : 'experts'}',
                                         accentColor: const Color(0xFF7C3AED),
                                       ),
                                     if (headVetCount > 0)
                                       _buildUserMetaPill(
-                                        icon: Icons.health_and_safety_outlined,
+                                        icon: Icons.favorite,
                                         label:
                                             '$headVetCount ${headVetCount == 1 ? 'head vet' : 'head vets'}',
                                         accentColor: const Color(0xFFDC2626),
                                       ),
                                     if (mlExpertCount > 0)
                                       _buildUserMetaPill(
-                                        icon: Icons.memory_rounded,
+                                        icon: Icons.settings,
                                         label:
                                             '$mlExpertCount ${mlExpertCount == 1 ? 'ML expert' : 'ML experts'}',
                                         accentColor: const Color(0xFF0F766E),
@@ -6714,7 +6715,7 @@ class _TotalUsersCardState extends State<TotalUsersCard> {
                                     if (adminCount > 0)
                                       _buildUserMetaPill(
                                         icon:
-                                            Icons.admin_panel_settings_outlined,
+                                            Icons.admin_panel_settings,
                                         label:
                                             '$adminCount ${adminCount == 1 ? 'admin' : 'admins'}',
                                         accentColor: const Color(0xFFB45309),
@@ -6816,7 +6817,7 @@ class _TotalUsersCardState extends State<TotalUsersCard> {
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: Icon(
-                    Icons.location_city_rounded,
+                    Icons.place,
                     color:
                         hasUsers
                             ? const Color(0xFF2D7204)
@@ -6972,11 +6973,11 @@ class _TotalUsersCardState extends State<TotalUsersCard> {
                                   color: const Color(0xFFEFF6FF),
                                   borderRadius: BorderRadius.circular(18),
                                 ),
-                                child: const Icon(
-                                  Icons.people_alt_rounded,
-                                  size: 30,
-                                  color: Color(0xFF1D4ED8),
-                                ),
+                          child: const Icon(
+                            Icons.people,
+                            size: 30,
+                            color: Color(0xFF1D4ED8),
+                          ),
                               ),
                               const SizedBox(width: 16),
                               Expanded(
@@ -7051,38 +7052,38 @@ class _TotalUsersCardState extends State<TotalUsersCard> {
                               _buildSummaryMetric(
                                 label: 'Total Accounts',
                                 value: _userCountLabel(totalAccounts),
-                                icon: Icons.groups_2_outlined,
+                                icon: Icons.people,
                                 accentColor: const Color(0xFF1D4ED8),
                               ),
                               _buildSummaryMetric(
                                 label: 'Farmer Accounts',
                                 value: _userCountLabel(farmerCount),
-                                icon: Icons.agriculture_outlined,
+                                icon: Icons.person,
                                 accentColor: const Color(0xFF2D7204),
                               ),
                               _buildSummaryMetric(
                                 label: 'Expert Accounts',
                                 value: _userCountLabel(expertCount),
-                                icon: Icons.verified_user_outlined,
+                                icon: Icons.verified_user,
                                 accentColor: const Color(0xFF7C3AED),
                               ),
                               _buildSummaryMetric(
                                 label: 'Head Veterinarian',
                                 value: _userCountLabel(headVetCount),
-                                icon: Icons.health_and_safety_outlined,
+                                icon: Icons.favorite,
                                 accentColor: const Color(0xFFDC2626),
                               ),
                               _buildSummaryMetric(
                                 label: 'Machine Learning Experts',
                                 value: _userCountLabel(mlExpertCount),
-                                icon: Icons.memory_rounded,
+                                icon: Icons.settings,
                                 accentColor: const Color(0xFF0F766E),
                               ),
                               _buildSummaryMetric(
                                 label: 'Cities/Municipalities with Users',
                                 value:
                                     '$activeCities ${activeCities == 1 ? 'city/municipality' : 'cities/municipalities'}',
-                                icon: Icons.location_city_outlined,
+                                icon: Icons.location_city,
                                 accentColor: const Color(0xFF0369A1),
                               ),
                             ];

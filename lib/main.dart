@@ -170,5 +170,5 @@ class _AuthWrapperState extends State<AuthWrapper> {
     );
   }
 }
-// flutter build web --release --dart-define=FLUTTER_WEB_USE_SKIA=true
+// flutter build web --release --no-tree-shake-icons --dart-define=FLUTTER_WEB_USE_SKIA=true
 //flutter run -d chrome --profile --dart-define=FLUTTER_WEB_USE_SKIA=true

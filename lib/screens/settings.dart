@@ -113,6 +113,7 @@ class _SettingsState extends State<Settings> {
                                         'type': 'profile_update',
                                         'color': Colors.purple.value,
                                         'icon': Icons.person_outline.codePoint,
+                                        'iconKey': 'person_outline',
                                         'timestamp':
                                             FieldValue.serverTimestamp(),
                                       });
@@ -339,6 +340,7 @@ class _SettingsState extends State<Settings> {
                 'type': 'profile_update',
                 'color': Colors.green.value,
                 'icon': Icons.check_circle.codePoint,
+                'iconKey': 'check_circle',
                 'timestamp': FieldValue.serverTimestamp(),
               });
             } catch (e) {
@@ -792,6 +794,7 @@ class _SettingsState extends State<Settings> {
                                         'type': 'profile_update',
                                         'color': Colors.purple.value,
                                         'icon': Icons.email.codePoint,
+                                        'iconKey': 'email',
                                         'timestamp':
                                             FieldValue.serverTimestamp(),
                                       });
@@ -1286,6 +1289,8 @@ class _SettingsState extends State<Settings> {
                                                               Icons
                                                                   .security
                                                                   .codePoint,
+                                                          'iconKey':
+                                                              'security',
                                                           'timestamp':
                                                               FieldValue.serverTimestamp(),
                                                         });

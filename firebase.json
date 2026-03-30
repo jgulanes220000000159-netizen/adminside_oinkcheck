@@ -12,17 +12,37 @@
         "headers": [{ "key": "Cache-Control", "value": "no-cache" }]
       },
       {
-        "source": "**",
-        "headers": [{ "key": "Cache-Control", "value": "no-cache" }]
+        "source": "**/*.otf",
+        "headers": [
+          { "key": "Access-Control-Allow-Origin", "value": "*" },
+          {
+            "key": "Cache-Control",
+            "value": "public, max-age=31536000, immutable"
+          }
+        ]
+      },
+      {
+        "source": "**/*.ttf",
+        "headers": [
+          { "key": "Access-Control-Allow-Origin", "value": "*" },
+          {
+            "key": "Cache-Control",
+            "value": "public, max-age=31536000, immutable"
+          }
+        ]
       },
       {
         "source": "**/*.*",
         "headers": [
           {
             "key": "Cache-Control",
-            "value": "public,max-age=31536000,immutable"
+            "value": "public, max-age=31536000, immutable"
           }
         ]
+      },
+      {
+        "source": "**",
+        "headers": [{ "key": "Cache-Control", "value": "no-cache" }]
       }
     ],
     "rewrites": [

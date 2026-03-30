@@ -740,6 +740,7 @@ class _UserManagementState extends State<UserManagement> {
                                       'type': 'update',
                                       'color': Colors.blue.value,
                                       'icon': Icons.edit.codePoint,
+                                      'iconKey': 'edit',
                                       'timestamp':
                                           cf.FieldValue.serverTimestamp(),
                                     });
@@ -936,6 +937,7 @@ class _UserManagementState extends State<UserManagement> {
           'type': 'delete',
           'color': Colors.red.value,
           'icon': Icons.delete.codePoint,
+          'iconKey': 'delete',
           'timestamp': cf.FieldValue.serverTimestamp(),
         });
 

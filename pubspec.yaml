@@ -46,3 +46,5 @@ flutter:
     - assets/davao_del_norte_locations.json
     - assets/diseases/
     - assets/qrc.jpg
+    - assets/DDN.geojson
+    - assets/DDN.topojson

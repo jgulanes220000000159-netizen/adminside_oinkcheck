@@ -120,9 +120,110 @@ class _AdminDashboardState extends State<AdminDashboard>
         return Icons.timer;
       case 0xe3c2: // Icons.warning_amber.codePoint
         return Icons.warning_amber;
+      case 0xe0b0: // Icons.picture_as_pdf.codePoint
+        return Icons.picture_as_pdf;
+      case 0xea77: // Icons.login_rounded.codePoint
+        return Icons.login_rounded;
+      case 0xe9ba: // Icons.logout.codePoint
+        return Icons.logout;
+      case 0xe000: // Icons.error.codePoint
+        return Icons.error;
+      case 0xe8b8: // Icons.settings.codePoint
+        return Icons.settings;
+      case 0xe7fd: // Icons.person_outline.codePoint
+        return Icons.person_outline;
+      case 0xe32a: // Icons.security.codePoint
+        return Icons.security;
+      case 0xe8f0: // Icons.check_circle.codePoint
+        return Icons.check_circle;
+      case 0xe0be: // Icons.email.codePoint
+        return Icons.email;
+      case 0xe66b: // Icons.date_range.codePoint
+        return Icons.date_range;
+      case 0xe871: // Icons.dashboard.codePoint
+        return Icons.dashboard;
       default:
         return Icons.info; // Default icon
     }
+  }
+
+  String? _normalizeActivityIconKey(dynamic iconKey) {
+    final key = iconKey?.toString().trim();
+    return key == null || key.isEmpty ? null : key;
+  }
+
+  IconData _getIconFromKey(String iconKey) {
+    switch (iconKey) {
+      case 'person_add':
+        return Icons.person_add;
+      case 'block':
+        return Icons.block;
+      case 'verified_user':
+        return Icons.verified_user;
+      case 'edit':
+        return Icons.edit;
+      case 'delete':
+        return Icons.delete;
+      case 'person':
+        return Icons.person;
+      case 'pending_actions':
+        return Icons.pending_actions;
+      case 'assignment_turned_in':
+        return Icons.assignment_turned_in;
+      case 'timer':
+        return Icons.timer;
+      case 'warning_amber':
+        return Icons.warning_amber;
+      case 'picture_as_pdf':
+        return Icons.picture_as_pdf;
+      case 'login_rounded':
+        return Icons.login_rounded;
+      case 'logout':
+        return Icons.logout;
+      case 'error':
+        return Icons.error;
+      case 'settings':
+        return Icons.settings;
+      case 'person_outline':
+        return Icons.person_outline;
+      case 'security':
+        return Icons.security;
+      case 'date_range':
+        return Icons.date_range;
+      case 'dashboard':
+        return Icons.dashboard;
+      case 'check_circle':
+        return Icons.check_circle;
+      case 'email':
+        return Icons.email;
+      default:
+        return Icons.info;
+    }
+  }
+
+  String _iconKeyForMaterialIcon(IconData icon) {
+    if (icon == Icons.person_add) return 'person_add';
+    if (icon == Icons.block) return 'block';
+    if (icon == Icons.verified_user) return 'verified_user';
+    if (icon == Icons.edit) return 'edit';
+    if (icon == Icons.delete) return 'delete';
+    if (icon == Icons.person) return 'person';
+    if (icon == Icons.pending_actions) return 'pending_actions';
+    if (icon == Icons.assignment_turned_in) return 'assignment_turned_in';
+    if (icon == Icons.timer) return 'timer';
+    if (icon == Icons.warning_amber) return 'warning_amber';
+    if (icon == Icons.picture_as_pdf) return 'picture_as_pdf';
+    if (icon == Icons.login_rounded) return 'login_rounded';
+    if (icon == Icons.logout) return 'logout';
+    if (icon == Icons.error) return 'error';
+    if (icon == Icons.settings) return 'settings';
+    if (icon == Icons.person_outline) return 'person_outline';
+    if (icon == Icons.security) return 'security';
+    if (icon == Icons.date_range) return 'date_range';
+    if (icon == Icons.dashboard) return 'dashboard';
+    if (icon == Icons.check_circle) return 'check_circle';
+    if (icon == Icons.email) return 'email';
+    return 'info';
   }
 
   // Resolve activity icon primarily by 'type' for consistency across platforms.
@@ -130,6 +231,11 @@ class _AdminDashboardState extends State<AdminDashboard>
   IconData _resolveActivityIcon(Map<String, dynamic> data) {
     final String type = (data['type'] ?? '').toString();
     print('[ICON DEBUG] Activity type: "$type", action: "${data['action']}"');
+
+    final iconKey = _normalizeActivityIconKey(data['iconKey']);
+    if (iconKey != null) {
+      return _getIconFromKey(iconKey);
+    }
 
     // Always use type-based icon resolution for web compatibility
     switch (type) {
@@ -218,6 +324,7 @@ class _AdminDashboardState extends State<AdminDashboard>
       'type': type,
       'color': color.value,
       'icon': icon.codePoint,
+      'iconKey': _iconKeyForMaterialIcon(icon),
       'timestamp': cf.FieldValue.serverTimestamp(),
     });
   }
@@ -952,6 +1059,7 @@ class _AdminDashboardState extends State<AdminDashboard>
                                             'type': 'logout',
                                             'color': Colors.orange.value,
                                             'icon': Icons.logout.codePoint,
+                                            'iconKey': 'logout',
                                             'timestamp':
                                                 FieldValue.serverTimestamp(),
                                           });

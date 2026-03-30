@@ -293,6 +293,7 @@ class _PendingUsersModalContentState extends State<PendingUsersModalContent> {
           'type': 'accept',
           'color': Colors.green.value,
           'icon': Icons.person_add.codePoint,
+          'iconKey': 'person_add',
           'timestamp': FieldValue.serverTimestamp(),
         });
 
@@ -407,6 +408,7 @@ class _PendingUsersModalContentState extends State<PendingUsersModalContent> {
           'type': 'delete',
           'color': Colors.red.value,
           'icon': Icons.block.codePoint,
+          'iconKey': 'block',
           'timestamp': FieldValue.serverTimestamp(),
         });
 
@@ -521,6 +523,7 @@ class _PendingUsersModalContentState extends State<PendingUsersModalContent> {
             'type': 'accept',
             'color': Colors.green.value,
             'icon': Icons.person_add.codePoint,
+            'iconKey': 'person_add',
             'timestamp': FieldValue.serverTimestamp(),
           });
         }
@@ -636,6 +639,7 @@ class _PendingUsersModalContentState extends State<PendingUsersModalContent> {
             'type': 'delete',
             'color': Colors.red.value,
             'icon': Icons.block.codePoint,
+            'iconKey': 'block',
             'timestamp': FieldValue.serverTimestamp(),
           });
         }

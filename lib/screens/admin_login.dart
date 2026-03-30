@@ -84,6 +84,7 @@ class _AdminLoginState extends State<AdminLogin> {
             'type': 'login',
             'color': Colors.green.value,
             'icon': Icons.login_rounded.codePoint,
+            'iconKey': 'login_rounded',
             'timestamp': FieldValue.serverTimestamp(),
           });
 
