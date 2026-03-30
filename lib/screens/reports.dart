@@ -17,6 +17,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import '../shared/total_users_card.dart' show resolveStorageImageUrl;
+import '../shared/davao_del_norte_locations.dart';
 import 'disease_map_widget.dart';
 import '../shared/report_disease_catalog.dart';
 
@@ -33,6 +34,7 @@ class Reports extends StatefulWidget {
 class _ReportsState extends State<Reports> {
   String _selectedTimeRange = 'Last Month';
   String _selectedCity = 'All'; // City filter for reports page
+  String _selectedBarangay = 'All';
   bool _isLoading = true;
   Future<List<Map<String, dynamic>>>?
   _scanRequestsFuture; // cached shared future
@@ -264,13 +266,263 @@ class _ReportsState extends State<Reports> {
   }
 
   // Get available cities from Davao del Norte locations (all LGUs shown even with no data)
-  Future<List<String>> _getAvailableCities() async {
+  Future<List<Map<String, dynamic>>> _getAvailableCities() async {
     try {
-      final cities = await ScanRequestsService.getDavaoDelNorteCityNames();
-      return ['All', ...cities];
+      await DavaoDelNorteLocations.load();
+      final locationCities = DavaoDelNorteLocations.getCities();
+      final allRequests = await ScanRequestsService.getScanRequests();
+      final filteredByTime = ScanRequestsService.filterByTimeRange(
+        allRequests,
+        _selectedTimeRange,
+      );
+      final completedOnly =
+          filteredByTime
+              .where((request) => (request['status'] ?? '').toString() == 'completed')
+              .toList();
+
+      final Map<String, int> counts = {};
+      for (final request in completedOnly) {
+        final city = (request['cityMunicipality'] ?? '').toString().trim();
+        if (city.isEmpty) continue;
+        counts[city.toLowerCase()] = (counts[city.toLowerCase()] ?? 0) + 1;
+      }
+
+      return [
+        {
+          'value': 'All',
+          'label': 'All cities/municipalities',
+          'count': completedOnly.length,
+          'hasData': completedOnly.isNotEmpty,
+        },
+        ...locationCities.map((city) {
+          final name = (city['name'] ?? '').toString().trim();
+          final count = counts[name.toLowerCase()] ?? 0;
+          return {
+            'value': name,
+            'label':
+                count > 0 ? '$name  •  Has data ($count)' : '$name  •  No data',
+            'count': count,
+            'hasData': count > 0,
+          };
+        }),
+      ];
     } catch (e) {
-      return ['All'];
+      return [
+        {
+          'value': 'All',
+          'label': 'All cities/municipalities',
+          'count': 0,
+          'hasData': false,
+        },
+      ];
     }
+  }
+
+  Future<List<Map<String, dynamic>>> _getAvailableBarangays() async {
+    try {
+      if (_selectedCity == 'All') {
+        return [
+          {
+            'value': 'All',
+            'label': 'Select a city first',
+            'count': 0,
+            'hasData': false,
+          },
+        ];
+      }
+
+      await DavaoDelNorteLocations.load();
+      final locationBarangays = DavaoDelNorteLocations.getBarangaysForCity(
+        _selectedCity,
+      );
+      final allRequests = await ScanRequestsService.getScanRequests();
+      final filteredByTime = ScanRequestsService.filterByTimeRange(
+        allRequests,
+        _selectedTimeRange,
+      );
+      final filteredByCity =
+          filteredByTime.where((request) {
+            final city = (request['cityMunicipality'] ?? '').toString().trim();
+            return city.toLowerCase() == _selectedCity.toLowerCase();
+          }).where((request) {
+            return (request['status'] ?? '').toString() == 'completed';
+          }).toList();
+
+      final Map<String, int> counts = {};
+      for (final request in filteredByCity) {
+        final barangay = (request['barangay'] ?? '').toString().trim();
+        if (barangay.isEmpty) continue;
+        counts[barangay.toLowerCase()] = (counts[barangay.toLowerCase()] ?? 0) + 1;
+      }
+
+      return [
+        {
+          'value': 'All',
+          'label': 'All barangays',
+          'count': filteredByCity.length,
+          'hasData': filteredByCity.isNotEmpty,
+        },
+        ...locationBarangays.map((barangay) {
+          final name = (barangay['name'] ?? '').toString().trim();
+          final count = counts[name.toLowerCase()] ?? 0;
+          return {
+            'value': name,
+            'label':
+                count > 0 ? '$name  •  Has data ($count)' : '$name  •  No data',
+            'count': count,
+            'hasData': count > 0,
+          };
+        }),
+      ];
+    } catch (e) {
+      return [
+        {'value': 'All', 'label': 'All barangays', 'count': 0, 'hasData': false},
+      ];
+    }
+  }
+
+  bool _matchesLocationFilters(Map<String, dynamic> request) {
+    final city = (request['cityMunicipality'] ?? '').toString().trim();
+    final barangay = (request['barangay'] ?? '').toString().trim();
+
+    final cityMatches =
+        _selectedCity == 'All' ||
+        city.toLowerCase() == _selectedCity.toLowerCase();
+    final barangayMatches =
+        _selectedBarangay == 'All' ||
+        barangay.toLowerCase() == _selectedBarangay.toLowerCase();
+    return cityMatches && barangayMatches;
+  }
+
+  List<Map<String, dynamic>> _applyLocationFilters(
+    List<Map<String, dynamic>> requests,
+  ) {
+    return requests.where(_matchesLocationFilters).toList();
+  }
+
+  Widget _buildReportFilterDropdown({
+    required String label,
+    required IconData icon,
+    required String value,
+    required List<Map<String, dynamic>> items,
+    required ValueChanged<String?>? onChanged,
+    double? minWidth,
+  }) {
+    return SizedBox(
+      width: minWidth ?? 220,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: const Color(0xFFD8E2EC)),
+          boxShadow: const [
+            BoxShadow(
+              color: Color(0x0A0F172A),
+              blurRadius: 12,
+              offset: Offset(0, 4),
+            ),
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(icon, size: 16, color: Colors.blueGrey[700]),
+                const SizedBox(width: 6),
+                Text(
+                  label,
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.blueGrey[600],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 6),
+            DropdownButtonFormField<String>(
+              value:
+                  items.any((item) => item['value'] == value)
+                      ? value
+                      : (items.first['value'] as String),
+              isExpanded: true,
+              decoration: const InputDecoration(
+                isDense: true,
+                border: InputBorder.none,
+                contentPadding: EdgeInsets.zero,
+              ),
+              icon: const Icon(Icons.keyboard_arrow_down_rounded),
+              items:
+                  items.map((item) {
+                    final itemValue = (item['value'] ?? 'All').toString();
+                    final itemLabel = (item['label'] ?? itemValue).toString();
+                    final hasData = item['hasData'] == true;
+                    return DropdownMenuItem<String>(
+                      value: itemValue,
+                      child: Text(
+                        itemLabel,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w700,
+                          color:
+                              hasData
+                                  ? const Color(0xFF0F172A)
+                                  : Colors.blueGrey.shade400,
+                        ),
+                      ),
+                    );
+                  }).toList(),
+              onChanged: onChanged,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  List<Map<String, dynamic>> _buildTimeRangeFilterItems() {
+    final baseItems = <Map<String, dynamic>>[
+      {
+        'value': 'Last Month',
+        'label': 'Last Month',
+        'count': 0,
+        'hasData': true,
+      },
+      {
+        'value': 'All Time',
+        'label': 'All Time',
+        'count': 0,
+        'hasData': true,
+      },
+      {
+        'value': 'Monthly…',
+        'label': 'Monthly…',
+        'count': 0,
+        'hasData': true,
+      },
+      {
+        'value': 'Custom…',
+        'label': 'Custom…',
+        'count': 0,
+        'hasData': true,
+      },
+    ];
+
+    if (_selectedTimeRange.startsWith('Custom (') ||
+        _selectedTimeRange.startsWith('Monthly (')) {
+      baseItems.add({
+        'value': _selectedTimeRange,
+        'label': _displayRangeLabel(_selectedTimeRange),
+        'count': 0,
+        'hasData': true,
+      });
+    }
+
+    return baseItems;
   }
 
   // Get reports trend for a specific city and time range
@@ -579,15 +831,7 @@ class _ReportsState extends State<Reports> {
       try {
         // Get all scan requests and filter by city first
         final all = await ScanRequestsService.getScanRequests();
-        var cityFiltered = all;
-        if (_selectedCity != 'All') {
-          cityFiltered =
-              all.where((request) {
-                final city =
-                    (request['cityMunicipality'] ?? '').toString().trim();
-                return city.toLowerCase() == _selectedCity.toLowerCase();
-              }).toList();
-        }
+        final cityFiltered = _applyLocationFilters(all);
         // Then filter by time range and calculate counts
         final filtered = ScanRequestsService.filterByTimeRange(
           cityFiltered,
@@ -643,13 +887,7 @@ class _ReportsState extends State<Reports> {
         }).toList();
 
     // Filter by city if not 'All'
-    if (_selectedCity != 'All') {
-      scanRequests =
-          scanRequests.where((request) {
-            final city = (request['cityMunicipality'] ?? '').toString().trim();
-            return city.toLowerCase() == _selectedCity.toLowerCase();
-          }).toList();
-    }
+    scanRequests = _applyLocationFilters(scanRequests);
 
     // Build a reviewedAt-anchored time window to match card/SLA logic
     final DateTime now = DateTime.now();
@@ -1059,15 +1297,7 @@ class _ReportsState extends State<Reports> {
       // Compute counts based on the selected time range for accuracy
       final all = await ScanRequestsService.getScanRequests();
       // Filter by city first
-      var cityFiltered = all;
-      if (_selectedCity != 'All') {
-        cityFiltered =
-            all.where((request) {
-              final city =
-                  (request['cityMunicipality'] ?? '').toString().trim();
-              return city.toLowerCase() == _selectedCity.toLowerCase();
-            }).toList();
-      }
+      final cityFiltered = _applyLocationFilters(all);
       // Then filter by time range
       final filtered = ScanRequestsService.filterByTimeRange(
         cityFiltered,
@@ -1098,15 +1328,7 @@ class _ReportsState extends State<Reports> {
     try {
       // Get all scan requests and filter by city first
       final all = await ScanRequestsService.getScanRequests();
-      var cityFiltered = all;
-      if (_selectedCity != 'All') {
-        cityFiltered =
-            all.where((request) {
-              final city =
-                  (request['cityMunicipality'] ?? '').toString().trim();
-              return city.toLowerCase() == _selectedCity.toLowerCase();
-            }).toList();
-      }
+      final cityFiltered = _applyLocationFilters(all);
       // Create a filtered service call by pre-filtering the data
       final trendData = await _getReportsTrendForCity(
         cityFiltered,
@@ -1145,15 +1367,7 @@ class _ReportsState extends State<Reports> {
     try {
       // Get all scan requests and filter by city first
       final all = await ScanRequestsService.getScanRequests();
-      var cityFiltered = all;
-      if (_selectedCity != 'All') {
-        cityFiltered =
-            all.where((request) {
-              final city =
-                  (request['cityMunicipality'] ?? '').toString().trim();
-              return city.toLowerCase() == _selectedCity.toLowerCase();
-            }).toList();
-      }
+      final cityFiltered = _applyLocationFilters(all);
       // Create a filtered service call by pre-filtering the data
       final diseaseData = await _getDiseaseStatsForCity(
         cityFiltered,
@@ -1209,15 +1423,7 @@ class _ReportsState extends State<Reports> {
     try {
       final all = await ScanRequestsService.getScanRequests();
       // Filter by city first
-      var cityFiltered = all;
-      if (_selectedCity != 'All') {
-        cityFiltered =
-            all.where((request) {
-              final city =
-                  (request['cityMunicipality'] ?? '').toString().trim();
-              return city.toLowerCase() == _selectedCity.toLowerCase();
-            }).toList();
-      }
+      final cityFiltered = _applyLocationFilters(all);
       // Build reviewedAt-anchored window
       final DateTime now = DateTime.now();
       DateTime? startInclusive;
@@ -1441,21 +1647,7 @@ class _ReportsState extends State<Reports> {
       return const Center(child: CircularProgressIndicator());
     }
 
-    return Consumer<ScanRequestsSnapshot?>(
-      builder: (context, scanRequestsSnapshot, child) {
-        // Trigger update when snapshot changes (real-time)
-        if (_hasInitialized && scanRequestsSnapshot?.snapshot != null) {
-          // Use addPostFrameCallback to avoid calling setState during build
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (mounted) {
-              _updateStatsFromSnapshot();
-            }
-          });
-        }
-
-        return child!;
-      },
-      child: SingleChildScrollView(
+    return SingleChildScrollView(
         key: const PageStorageKey('reports_scroll'),
         controller: _pageScrollController,
         child: Padding(
@@ -1473,76 +1665,91 @@ class _ReportsState extends State<Reports> {
                   ),
                   Row(
                     children: [
-                      // City filter
                       Padding(
                         padding: const EdgeInsets.only(right: 12),
-                        child: FutureBuilder<List<String>>(
+                        child: FutureBuilder<List<Map<String, dynamic>>>(
                           future: _getAvailableCities(),
                           builder: (context, snapshot) {
-                            final cities = snapshot.data ?? ['All'];
-                            return DropdownButton<String>(
+                            final cities =
+                                snapshot.data ??
+                                const <Map<String, dynamic>>[
+                                  {
+                                    'value': 'All',
+                                    'label': 'All cities/municipalities',
+                                    'count': 0,
+                                    'hasData': false,
+                                  },
+                                ];
+                            return _buildReportFilterDropdown(
+                              label: 'City',
+                              icon: Icons.location_city,
                               value: _selectedCity,
-                              hint: const Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Icon(Icons.location_city, size: 18),
-                                  SizedBox(width: 4),
-                                  Text('City'),
-                                ],
-                              ),
-                              underline: const SizedBox.shrink(),
-                              items:
-                                  cities.map((city) {
-                                    return DropdownMenuItem(
-                                      value: city,
-                                      child: Text(city),
-                                    );
-                                  }).toList(),
+                              items: cities,
                               onChanged: (value) {
-                                if (value != null) {
-                                  setState(() {
-                                    _selectedCity = value;
-                                  });
-                                  // Reload data when city filter changes
-                                  _loadData();
-                                  // Also update stats from snapshot with city filter
-                                  _updateStatsFromSnapshot();
-                                }
+                                if (value == null) return;
+                                setState(() {
+                                  _selectedCity = value;
+                                  _selectedBarangay = 'All';
+                                });
+                                _loadData();
+                                _updateStatsFromSnapshot();
                               },
                             );
                           },
                         ),
                       ),
-                      // Global time filter
                       Padding(
                         padding: const EdgeInsets.only(right: 12),
-                        child: DropdownButton<String>(
+                        child: FutureBuilder<List<Map<String, dynamic>>>(
+                          future: _getAvailableBarangays(),
+                          builder: (context, snapshot) {
+                            final barangays =
+                                snapshot.data ??
+                                const <Map<String, dynamic>>[
+                                  {
+                                    'value': 'All',
+                                    'label': 'All barangays',
+                                    'count': 0,
+                                    'hasData': false,
+                                  },
+                                ];
+                            return Opacity(
+                              opacity: _selectedCity == 'All' ? 0.6 : 1,
+                              child: _buildReportFilterDropdown(
+                                label: 'Barangay',
+                                icon: Icons.place,
+                                value:
+                                    barangays.any(
+                                          (item) =>
+                                              item['value'] == _selectedBarangay,
+                                        )
+                                        ? _selectedBarangay
+                                        : 'All',
+                                items: barangays,
+                                onChanged:
+                                    _selectedCity == 'All'
+                                        ? null
+                                        : (value) {
+                                          if (value == null) return;
+                                          setState(() {
+                                            _selectedBarangay = value;
+                                          });
+                                          _loadData();
+                                          _updateStatsFromSnapshot();
+                                        },
+                              ),
+                            );
+                          },
+                        ),
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.only(right: 12),
+                        child: _buildReportFilterDropdown(
+                          label: 'Date Range',
+                          icon: Icons.date_range,
                           value: _selectedTimeRange,
-                          underline: const SizedBox.shrink(),
-                          items:
-                              (<String>[
-                                    'Last Month',
-                                    'All Time',
-                                    'Monthly…',
-                                    'Custom…',
-                                  ]..addAll(
-                                    _selectedTimeRange.startsWith('Custom (') ||
-                                            _selectedTimeRange.startsWith(
-                                              'Monthly (',
-                                            )
-                                        ? <String>[_selectedTimeRange]
-                                        : const <String>[],
-                                  ))
-                                  .map(
-                                    (range) => DropdownMenuItem(
-                                      value: range,
-                                      child: Text(
-                                        _displayRangeLabel(range),
-                                        overflow: TextOverflow.ellipsis,
-                                      ),
-                                    ),
-                                  )
-                                  .toList(),
+                          items: _buildTimeRangeFilterItems(),
+                          minWidth: 220,
                           onChanged: (value) async {
                             if (value == null) return;
                             if (value == 'Monthly…') {
@@ -1590,7 +1797,7 @@ class _ReportsState extends State<Reports> {
                                 await _onTimeRangeChanged(label);
                               }
                             } else {
-                              _onTimeRangeChanged(value);
+                              await _onTimeRangeChanged(value);
                             }
                           },
                         ),
@@ -1616,6 +1823,7 @@ class _ReportsState extends State<Reports> {
                             builder:
                                 (context) => GenerateReportDialog(
                                   initialCity: _selectedCity,
+                                  initialBarangay: _selectedBarangay,
                                 ),
                           );
                           if (result != null) {
@@ -1623,6 +1831,8 @@ class _ReportsState extends State<Reports> {
                                 result['range'] ?? _selectedTimeRange;
                             final pageSize = result['pageSize'] ?? 'A4';
                             final selectedCity = result['city'] ?? 'All';
+                            final selectedBarangay =
+                                result['barangay'] ?? 'All';
                             try {
                               showDialog(
                                 context: context,
@@ -1675,9 +1885,10 @@ class _ReportsState extends State<Reports> {
                                 timeRange: selectedRange,
                                 pageSize: pageSize,
                                 backgroundAsset:
-                                    'assets/report_template_bg.jpg',
+                                    'assets/header_template.png',
                                 preparedBy: preparedBy,
                                 selectedCity: selectedCity,
+                                selectedBarangay: selectedBarangay,
                               );
                               Navigator.of(context, rootNavigator: true).pop();
                               // Log activity: PDF generated
@@ -1781,6 +1992,7 @@ class _ReportsState extends State<Reports> {
                         diseaseStats: _diseaseStats,
                         selectedTimeRange: _selectedTimeRange,
                         selectedCity: _selectedCity,
+                        selectedBarangay: _selectedBarangay,
                         onTimeRangeChanged: (String newTimeRange) async {
                           await _onTimeRangeChanged(newTimeRange);
                         },
@@ -1816,6 +2028,7 @@ class _ReportsState extends State<Reports> {
                         const SizedBox(height: 16),
                         DiseaseMapWidget(
                           selectedCity: _selectedCity,
+                          selectedBarangay: _selectedBarangay,
                           selectedTimeRange: _selectedTimeRange,
                         ),
                       ],
@@ -1827,7 +2040,6 @@ class _ReportsState extends State<Reports> {
             ],
           ),
         ),
-      ),
     );
   }
 
@@ -2421,19 +2633,7 @@ class _ReportsState extends State<Reports> {
                             );
                           }
                           final all = snapshot.data ?? [];
-                          // Filter by city first
-                          var cityFiltered = all;
-                          if (_selectedCity != 'All') {
-                            cityFiltered =
-                                all.where((request) {
-                                  final city =
-                                      (request['cityMunicipality'] ?? '')
-                                          .toString()
-                                          .trim();
-                                  return city.toLowerCase() ==
-                                      _selectedCity.toLowerCase();
-                                }).toList();
-                          }
+                          final cityFiltered = _applyLocationFilters(all);
 
                           // Build reviewedAt-anchored window for SLA 48h (matches cards)
                           final DateTime now = DateTime.now();
@@ -3534,19 +3734,7 @@ class _ReportsState extends State<Reports> {
                             );
                           }
                           final all = snapshot.data ?? [];
-                          // Filter by city first
-                          var cityFiltered = all;
-                          if (_selectedCity != 'All') {
-                            cityFiltered =
-                                all.where((request) {
-                                  final city =
-                                      (request['cityMunicipality'] ?? '')
-                                          .toString()
-                                          .trim();
-                                  return city.toLowerCase() ==
-                                      _selectedCity.toLowerCase();
-                                }).toList();
-                          }
+                          final cityFiltered = _applyLocationFilters(all);
                           // Then filter by time range
                           final filtered =
                               ScanRequestsService.filterByTimeRange(
@@ -6030,11 +6218,13 @@ class DiseaseDistributionChart extends StatefulWidget {
   final Function(String)? onTimeRangeChanged;
   final String selectedTimeRange;
   final String selectedCity;
+  final String selectedBarangay;
   const DiseaseDistributionChart({
     Key? key,
     required this.diseaseStats,
     this.height,
     this.selectedCity = 'All',
+    this.selectedBarangay = 'All',
     this.onTimeRangeChanged,
     required this.selectedTimeRange,
   }) : super(key: key);
@@ -6252,14 +6442,16 @@ class _DiseaseDistributionChartState extends State<DiseaseDistributionChart> {
   void didUpdateWidget(covariant DiseaseDistributionChart oldWidget) {
     super.didUpdateWidget(oldWidget);
     // If city changed, clear live aggregated to use widget.diseaseStats (which is filtered by city)
-    if (oldWidget.selectedCity != widget.selectedCity) {
+    if (oldWidget.selectedCity != widget.selectedCity ||
+        oldWidget.selectedBarangay != widget.selectedBarangay) {
       setState(() {
         _liveAggregated = [];
       });
     }
     // If time range or city changed, compute immediately (don't wait for debounce)
     if ((oldWidget.selectedTimeRange != widget.selectedTimeRange ||
-            oldWidget.selectedCity != widget.selectedCity) &&
+            oldWidget.selectedCity != widget.selectedCity ||
+            oldWidget.selectedBarangay != widget.selectedBarangay) &&
         _lastSnapshot != null) {
       // Compute immediately for instant display
       final agg = _aggregateFromSnapshot(
@@ -6348,15 +6540,19 @@ class _DiseaseDistributionChartState extends State<DiseaseDistributionChart> {
 
       final all = await ScanRequestsService.getScanRequests();
       // Filter by city first
-      var cityFiltered = all;
-      if (widget.selectedCity != 'All') {
-        cityFiltered =
-            all.where((request) {
-              final city =
-                  (request['cityMunicipality'] ?? '').toString().trim();
-              return city.toLowerCase() == widget.selectedCity.toLowerCase();
-            }).toList();
-      }
+      final cityFiltered =
+          all.where((request) {
+            final city =
+                (request['cityMunicipality'] ?? '').toString().trim();
+            final barangay = (request['barangay'] ?? '').toString().trim();
+            final cityMatches =
+                widget.selectedCity == 'All' ||
+                city.toLowerCase() == widget.selectedCity.toLowerCase();
+            final barangayMatches =
+                widget.selectedBarangay == 'All' ||
+                barangay.toLowerCase() == widget.selectedBarangay.toLowerCase();
+            return cityMatches && barangayMatches;
+          }).toList();
       final Map<String, int> diseaseByDay = {};
       final Map<String, int> healthyByDay = {};
       final Map<String, Map<String, int>> diseaseDayCounts = {};
@@ -6761,12 +6957,17 @@ class _DiseaseDistributionChartState extends State<DiseaseDistributionChart> {
             : (source is List<Map<String, dynamic>> ? source : const []);
 
     // Filter by city if not 'All'
-    if (widget.selectedCity != 'All') {
-      docs = docs.where((data) {
-        final city = (data['cityMunicipality'] ?? '').toString().trim();
-        return city.toLowerCase() == widget.selectedCity.toLowerCase();
-      });
-    }
+    docs = docs.where((data) {
+      final city = (data['cityMunicipality'] ?? '').toString().trim();
+      final barangay = (data['barangay'] ?? '').toString().trim();
+      final cityMatches =
+          widget.selectedCity == 'All' ||
+          city.toLowerCase() == widget.selectedCity.toLowerCase();
+      final barangayMatches =
+          widget.selectedBarangay == 'All' ||
+          barangay.toLowerCase() == widget.selectedBarangay.toLowerCase();
+      return cityMatches && barangayMatches;
+    });
 
     for (final data in docs) {
       if (data.isEmpty) continue;
@@ -6949,15 +7150,19 @@ class _DiseaseDistributionChartState extends State<DiseaseDistributionChart> {
       final allRequests = await ScanRequestsService.getScanRequests();
 
       // Filter by city if not 'All'
-      var filtered = allRequests;
-      if (widget.selectedCity != 'All') {
-        filtered =
-            filtered.where((request) {
-              final city =
-                  (request['cityMunicipality'] ?? '').toString().trim();
-              return city.toLowerCase() == widget.selectedCity.toLowerCase();
-            }).toList();
-      }
+      var filtered =
+          allRequests.where((request) {
+            final city =
+                (request['cityMunicipality'] ?? '').toString().trim();
+            final barangay = (request['barangay'] ?? '').toString().trim();
+            final cityMatches =
+                widget.selectedCity == 'All' ||
+                city.toLowerCase() == widget.selectedCity.toLowerCase();
+            final barangayMatches =
+                widget.selectedBarangay == 'All' ||
+                barangay.toLowerCase() == widget.selectedBarangay.toLowerCase();
+            return cityMatches && barangayMatches;
+          }).toList();
 
       // Filter by time range
       filtered = ScanRequestsService.filterByTimeRange(
@@ -10135,7 +10340,12 @@ class _ExpertResponseStats {
 
 class GenerateReportDialog extends StatefulWidget {
   final String? initialCity;
-  const GenerateReportDialog({Key? key, this.initialCity}) : super(key: key);
+  final String? initialBarangay;
+  const GenerateReportDialog({
+    Key? key,
+    this.initialCity,
+    this.initialBarangay,
+  }) : super(key: key);
 
   @override
   State<GenerateReportDialog> createState() => _GenerateReportDialogState();
@@ -10146,8 +10356,23 @@ class _GenerateReportDialogState extends State<GenerateReportDialog> {
   DateTime? _customStart;
   DateTime? _customEnd;
   String _selectedCity = 'All';
-  List<String> _availableCities = ['All'];
+  String _selectedBarangay = 'All';
+  List<Map<String, dynamic>> _availableCities = const [
+    {
+      'value': 'All',
+      'label': 'All cities/municipalities',
+      'hasData': false,
+    },
+  ];
+  List<Map<String, dynamic>> _availableBarangays = const [
+    {
+      'value': 'All',
+      'label': 'All barangays',
+      'hasData': false,
+    },
+  ];
   bool _loadingCities = true;
+  bool _loadingBarangays = true;
   // Page size fixed to A4
   final List<Map<String, dynamic>> _ranges = [
     {
@@ -10204,27 +10429,181 @@ class _GenerateReportDialogState extends State<GenerateReportDialog> {
   void initState() {
     super.initState();
     _selectedCity = widget.initialCity ?? 'All';
+    _selectedBarangay = widget.initialBarangay ?? 'All';
     _loadAvailableCities();
+  }
+
+  String _resolvedDialogRange() {
+    if (_selectedRange == 'Monthly…') {
+      if (_customStart != null && _customEnd != null) {
+        final startStr = _customStart!.toIso8601String().substring(0, 10);
+        final endStr = _customEnd!.toIso8601String().substring(0, 10);
+        return 'Monthly ($startStr to $endStr)';
+      }
+      return 'Last Month';
+    }
+    if (_selectedRange == 'Custom…') {
+      if (_customStart != null && _customEnd != null) {
+        final startStr = _customStart!.toIso8601String().substring(0, 10);
+        final endStr = _customEnd!.toIso8601String().substring(0, 10);
+        return 'Custom ($startStr to $endStr)';
+      }
+      return 'Last Month';
+    }
+    return _selectedRange;
   }
 
   Future<void> _loadAvailableCities() async {
     try {
-      final cities = await ScanRequestsService.getDavaoDelNorteCityNames();
+      await DavaoDelNorteLocations.load();
+      final cities = DavaoDelNorteLocations.getCities();
+      final allRequests = await ScanRequestsService.getScanRequests();
+      final filteredByTime = ScanRequestsService.filterByTimeRange(
+        allRequests,
+        _resolvedDialogRange(),
+      );
+      final completedOnly =
+          filteredByTime
+              .where(
+                (request) => (request['status'] ?? '').toString() == 'completed',
+              )
+              .toList();
+      final Map<String, int> counts = {};
+      for (final request in completedOnly) {
+        final city = (request['cityMunicipality'] ?? '').toString().trim();
+        if (city.isEmpty) continue;
+        counts[city.toLowerCase()] = (counts[city.toLowerCase()] ?? 0) + 1;
+      }
       if (mounted) {
         setState(() {
-          _availableCities = ['All', ...cities];
+          _availableCities = [
+            {
+              'value': 'All',
+              'label':
+                  completedOnly.isNotEmpty
+                      ? 'All cities/municipalities  •  Has data (${completedOnly.length})'
+                      : 'All cities/municipalities  •  No data',
+              'hasData': completedOnly.isNotEmpty,
+            },
+            ...cities.map((city) {
+              final name = (city['name'] ?? '').toString().trim();
+              final count = counts[name.toLowerCase()] ?? 0;
+              return {
+                'value': name,
+                'label':
+                    count > 0
+                        ? '$name  •  Has data ($count)'
+                        : '$name  •  No data',
+                'hasData': count > 0,
+              };
+            }),
+          ];
           _loadingCities = false;
           // If initialCity was provided and exists, use it; otherwise keep 'All'
           if (widget.initialCity != null &&
-              _availableCities.contains(widget.initialCity)) {
+              _availableCities.any(
+                (city) => city['value'] == widget.initialCity,
+              )) {
             _selectedCity = widget.initialCity!;
           }
         });
+        await _loadAvailableBarangays();
       }
     } catch (e) {
       if (mounted) {
         setState(() {
           _loadingCities = false;
+          _loadingBarangays = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _loadAvailableBarangays() async {
+    try {
+      if (_selectedCity == 'All') {
+        if (mounted) {
+          setState(() {
+            _availableBarangays = const [
+              {
+                'value': 'All',
+                'label': 'Select a city first',
+                'hasData': false,
+              },
+            ];
+            _selectedBarangay = 'All';
+            _loadingBarangays = false;
+          });
+        }
+        return;
+      }
+
+      await DavaoDelNorteLocations.load();
+      final barangays =
+          DavaoDelNorteLocations.getBarangaysForCity(_selectedCity);
+      final allRequests = await ScanRequestsService.getScanRequests();
+      final filteredByTime = ScanRequestsService.filterByTimeRange(
+        allRequests,
+        _resolvedDialogRange(),
+      );
+      final filteredByCity =
+          filteredByTime
+              .where((request) {
+                final city =
+                    (request['cityMunicipality'] ?? '').toString().trim();
+                return city.toLowerCase() == _selectedCity.toLowerCase();
+              })
+              .where(
+                (request) => (request['status'] ?? '').toString() == 'completed',
+              )
+              .toList();
+      final Map<String, int> counts = {};
+      for (final request in filteredByCity) {
+        final barangay = (request['barangay'] ?? '').toString().trim();
+        if (barangay.isEmpty) continue;
+        counts[barangay.toLowerCase()] = (counts[barangay.toLowerCase()] ?? 0) + 1;
+      }
+
+      if (mounted) {
+        setState(() {
+          _availableBarangays = [
+            {
+              'value': 'All',
+              'label':
+                  filteredByCity.isNotEmpty
+                      ? 'All barangays  •  Has data (${filteredByCity.length})'
+                      : 'All barangays  •  No data',
+              'hasData': filteredByCity.isNotEmpty,
+            },
+            ...barangays.map((barangay) {
+              final name = (barangay['name'] ?? '').toString().trim();
+              final count = counts[name.toLowerCase()] ?? 0;
+              return {
+                'value': name,
+                'label':
+                    count > 0
+                        ? '$name  •  Has data ($count)'
+                        : '$name  •  No data',
+                'hasData': count > 0,
+              };
+            }),
+          ];
+          _loadingBarangays = false;
+          if (!_availableBarangays.any(
+            (barangay) => barangay['value'] == _selectedBarangay,
+          )) {
+            _selectedBarangay = 'All';
+          }
+        });
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(() {
+          _availableBarangays = const [
+            {'value': 'All', 'label': 'All barangays', 'hasData': false},
+          ];
+          _selectedBarangay = 'All';
+          _loadingBarangays = false;
         });
       }
     }
@@ -10285,6 +10664,24 @@ class _GenerateReportDialogState extends State<GenerateReportDialog> {
     }
   }
 
+  bool get _selectedDialogFiltersHaveData {
+    if (_selectedBarangay != 'All') {
+      return _availableBarangays.any(
+        (barangay) =>
+            barangay['value'] == _selectedBarangay &&
+            barangay['hasData'] == true,
+      );
+    }
+    if (_selectedCity != 'All') {
+      return _availableCities.any(
+        (city) => city['value'] == _selectedCity && city['hasData'] == true,
+      );
+    }
+    return _availableCities.any(
+      (city) => city['value'] == 'All' && city['hasData'] == true,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
@@ -10296,77 +10693,18 @@ class _GenerateReportDialogState extends State<GenerateReportDialog> {
           const Text('Generate PDF Report'),
         ],
       ),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
+      content: SizedBox(
+        width: 640,
+        height: 500,
+        child: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
           const Text(
             'Choose a time range for your report.',
-            style: TextStyle(fontSize: 15, color: Colors.black87),
+            style: TextStyle(fontSize: 14, color: Colors.black87),
           ),
-          const SizedBox(height: 18),
-          // City Filter
-          const Text(
-            'Filter by City:',
-            style: TextStyle(
-              fontSize: 14,
-              fontWeight: FontWeight.w500,
-              color: Colors.black87,
-            ),
-          ),
-          const SizedBox(height: 8),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-            decoration: BoxDecoration(
-              color: Colors.grey[100],
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: Colors.grey[200]!),
-            ),
-            child:
-                _loadingCities
-                    ? const Padding(
-                      padding: EdgeInsets.symmetric(vertical: 8),
-                      child: SizedBox(
-                        height: 16,
-                        width: 16,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      ),
-                    )
-                    : DropdownButton<String>(
-                      value: _selectedCity,
-                      isExpanded: true,
-                      underline: const SizedBox(),
-                      icon: const Icon(Icons.arrow_drop_down),
-                      items:
-                          _availableCities.map((city) {
-                            return DropdownMenuItem<String>(
-                              value: city,
-                              child: Row(
-                                children: [
-                                  const Icon(
-                                    Icons.location_city,
-                                    size: 20,
-                                    color: Color(0xFF2D7204),
-                                  ),
-                                  const SizedBox(width: 8),
-                                  Text(
-                                    city,
-                                    style: const TextStyle(fontSize: 15),
-                                  ),
-                                ],
-                              ),
-                            );
-                          }).toList(),
-                      onChanged: (value) {
-                        if (value != null) {
-                          setState(() {
-                            _selectedCity = value;
-                          });
-                        }
-                      },
-                    ),
-          ),
-          const SizedBox(height: 18),
+          const SizedBox(height: 10),
           // Time Range Filter
           const Text(
             'Time Range:',
@@ -10406,12 +10744,12 @@ class _GenerateReportDialogState extends State<GenerateReportDialog> {
                               Icon(
                                 range['icon'],
                                 size: 20,
-                                color: Color(0xFF2D7204),
+                                color: const Color(0xFF2D7204),
                               ),
                               const SizedBox(width: 8),
                               Text(
                                 range['label'],
-                                style: const TextStyle(fontSize: 15),
+                                style: const TextStyle(fontSize: 14),
                               ),
                             ],
                           ),
@@ -10423,7 +10761,9 @@ class _GenerateReportDialogState extends State<GenerateReportDialog> {
                   setState(() {
                     _selectedRange = value;
                   });
-                  // If user selects Monthly, immediately prompt for month/year
+                  _loadingCities = true;
+                  _loadingBarangays = true;
+                  _loadAvailableCities();
                   if (value == 'Monthly…') {
                     final now = DateTime.now();
                     _showMonthYearPicker(
@@ -10443,6 +10783,9 @@ class _GenerateReportDialogState extends State<GenerateReportDialog> {
                           _customStart = firstDay;
                           _customEnd = lastDay;
                         });
+                        _loadingCities = true;
+                        _loadingBarangays = true;
+                        _loadAvailableCities();
                       }
                     });
                   }
@@ -10450,7 +10793,156 @@ class _GenerateReportDialogState extends State<GenerateReportDialog> {
               },
             ),
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 10),
+          // City Filter
+          const Text(
+            'Filter by City:',
+            style: TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w500,
+              color: Colors.black87,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
+            decoration: BoxDecoration(
+              color: Colors.grey[100],
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: Colors.grey[200]!),
+            ),
+            child:
+                _loadingCities
+                    ? const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 8),
+                      child: SizedBox(
+                        height: 16,
+                        width: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
+                    )
+                    : DropdownButton<String>(
+                      value: _selectedCity,
+                      isExpanded: true,
+                      underline: const SizedBox(),
+                      icon: const Icon(Icons.arrow_drop_down),
+                      items:
+                          _availableCities.map((city) {
+                            return DropdownMenuItem<String>(
+                              value: (city['value'] ?? 'All').toString(),
+                              child: Row(
+                                children: [
+                                  const Icon(
+                                    Icons.location_city,
+                                    size: 20,
+                                    color: Color(0xFF2D7204),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: Text(
+                                      (city['label'] ?? 'All').toString(),
+                                      overflow: TextOverflow.ellipsis,
+                                      style: TextStyle(
+                                        fontSize: 15,
+                                        color:
+                                            city['hasData'] == true
+                                                ? Colors.black87
+                                                : Colors.grey[500],
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            );
+                          }).toList(),
+                      onChanged: (value) {
+                        if (value != null) {
+                          setState(() {
+                            _selectedCity = value;
+                            _selectedBarangay = 'All';
+                            _loadingBarangays = true;
+                          });
+                          _loadAvailableBarangays();
+                        }
+                      },
+                    ),
+          ),
+          const SizedBox(height: 10),
+          const Text(
+            'Filter by Barangay:',
+            style: TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w500,
+              color: Colors.black87,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
+            decoration: BoxDecoration(
+              color: Colors.grey[100],
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: Colors.grey[200]!),
+            ),
+            child:
+                _loadingBarangays
+                    ? const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 8),
+                      child: SizedBox(
+                        height: 16,
+                        width: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
+                    )
+                    : DropdownButton<String>(
+                      value: _selectedBarangay,
+                      isExpanded: true,
+                      underline: const SizedBox(),
+                      icon: const Icon(Icons.arrow_drop_down),
+                      items:
+                          _availableBarangays.map((barangay) {
+                            return DropdownMenuItem<String>(
+                              value: (barangay['value'] ?? 'All').toString(),
+                              child: Row(
+                                children: [
+                                  const Icon(
+                                    Icons.place,
+                                    size: 20,
+                                    color: Color(0xFF2D7204),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: Text(
+                                      (barangay['label'] ?? 'All barangays')
+                                          .toString(),
+                                      overflow: TextOverflow.ellipsis,
+                                      style: TextStyle(
+                                        fontSize: 14,
+                                        color:
+                                            barangay['hasData'] == true
+                                                ? Colors.black87
+                                                : Colors.grey[500],
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            );
+                          }).toList(),
+                      onChanged:
+                          _selectedCity == 'All'
+                              ? null
+                              : (value) {
+                                if (value != null) {
+                                  setState(() {
+                                    _selectedBarangay = value;
+                                  });
+                                }
+                              },
+                    ),
+          ),
+          const SizedBox(height: 8),
+          const SizedBox(height: 6),
           if (_selectedRange == 'Monthly…') ...[
             OutlinedButton.icon(
               icon: const Icon(Icons.calendar_month),
@@ -10503,63 +10995,79 @@ class _GenerateReportDialogState extends State<GenerateReportDialog> {
                     _customStart = picked.start;
                     _customEnd = picked.end;
                   });
+                  _loadingCities = true;
+                  _loadingBarangays = true;
+                  _loadAvailableCities();
                 }
               },
             ),
           ],
-          const SizedBox(height: 18),
-          Divider(),
           const SizedBox(height: 10),
-          Card(
-            color: Colors.green[50],
-            elevation: 0,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Padding(
-              padding: const EdgeInsets.all(14),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Icon(_selectedRangeData['icon'], color: Color(0xFF2D7204)),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          _selectedRangeData['label'],
-                          style: const TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 16,
-                            color: Color(0xFF2D7204),
-                          ),
+          Divider(),
+          const SizedBox(height: 6),
+              Card(
+                color: Colors.green[50],
+                elevation: 0,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.all(10),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Icon(_selectedRangeData['icon'], color: Color(0xFF2D7204)),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              _selectedRangeData['label'],
+                              style: const TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 15,
+                                color: Color(0xFF2D7204),
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              _selectedRangeData['desc'],
+                              style: const TextStyle(
+                                fontSize: 13,
+                                color: Colors.black87,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            const Text(
+                              'Includes: Disease Distribution, Healthy Trends',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Colors.teal,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                            if (!_selectedDialogFiltersHaveData) ...[
+                              const SizedBox(height: 10),
+                              const Text(
+                                'No completed report data found for the selected time range and location filters.',
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  color: Color(0xFFD32F2F),
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ],
+                          ],
                         ),
-                        const SizedBox(height: 4),
-                        Text(
-                          _selectedRangeData['desc'],
-                          style: const TextStyle(
-                            fontSize: 14,
-                            color: Colors.black87,
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        const Text(
-                          'Includes: Disease Distribution, Healthy Trends',
-                          style: TextStyle(
-                            fontSize: 13,
-                            color: Colors.teal,
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                      ],
-                    ),
+                      ),
+                    ],
                   ),
-                ],
+                ),
               ),
-            ),
+            ],
           ),
-        ],
+        ),
       ),
       actions: [
         TextButton(
@@ -10628,7 +11136,12 @@ class _GenerateReportDialogState extends State<GenerateReportDialog> {
             }
 
             // Show confirmation dialog before generating PDF
-            _showConfirmationDialog(context, range, _selectedCity);
+            _showConfirmationDialog(
+              context,
+              range,
+              _selectedCity,
+              _selectedBarangay,
+            );
           },
         ),
       ],
@@ -10668,6 +11181,7 @@ class _GenerateReportDialogState extends State<GenerateReportDialog> {
     BuildContext context,
     String range,
     String city,
+    String barangay,
   ) {
     final displayRange = _formatRangeForDisplay(range);
 
@@ -10810,6 +11324,44 @@ class _GenerateReportDialogState extends State<GenerateReportDialog> {
                                     ],
                                   ),
                                 ],
+                                if (barangay != 'All') ...[
+                                  const SizedBox(height: 12),
+                                  Row(
+                                    children: [
+                                      const Icon(
+                                        Icons.place,
+                                        color: Color(0xFF2D7204),
+                                        size: 24,
+                                      ),
+                                      const SizedBox(width: 12),
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            const Text(
+                                              'Barangay Filter',
+                                              style: TextStyle(
+                                                fontSize: 12,
+                                                color: Colors.black54,
+                                                fontWeight: FontWeight.w500,
+                                              ),
+                                            ),
+                                            const SizedBox(height: 4),
+                                            Text(
+                                              barangay,
+                                              style: const TextStyle(
+                                                fontSize: 18,
+                                                color: Color(0xFF2D7204),
+                                                fontWeight: FontWeight.bold,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ],
                               ],
                             ),
                           ),
@@ -10929,6 +11481,7 @@ class _GenerateReportDialogState extends State<GenerateReportDialog> {
                               'range': range,
                               'pageSize': 'A4',
                               'city': city,
+                              'barangay': barangay,
                             }); // Close main dialog and return result
                           },
                         ),

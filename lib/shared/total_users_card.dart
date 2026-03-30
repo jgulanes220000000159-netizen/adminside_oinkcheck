@@ -4531,12 +4531,6 @@ class _ReportsModalContentState extends State<ReportsModalContent>
                         ),
                       ),
                     ),
-                    const SizedBox(width: 8),
-                    IconButton(
-                      tooltip: 'Delete',
-                      onPressed: () async => _confirmAndDelete(report),
-                      icon: const Icon(Icons.delete, color: Colors.red),
-                    ),
                   ],
                 ),
               ],

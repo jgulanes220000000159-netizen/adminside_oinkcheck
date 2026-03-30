@@ -48,3 +48,4 @@ flutter:
     - assets/qrc.jpg
     - assets/DDN.geojson
     - assets/DDN.topojson
+    - assets/header_template.png

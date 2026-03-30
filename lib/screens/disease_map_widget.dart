@@ -110,11 +110,13 @@ class _LocationAgg {
 // Disease Map Widget
 class DiseaseMapWidget extends StatefulWidget {
   final String selectedCity;
+  final String selectedBarangay;
   final String selectedTimeRange;
 
   const DiseaseMapWidget({
     Key? key,
     required this.selectedCity,
+    required this.selectedBarangay,
     required this.selectedTimeRange,
   }) : super(key: key);
 
@@ -165,12 +167,28 @@ class _DiseaseMapWidgetState extends State<DiseaseMapWidget>
     // Always reload when city or time range changes (no caching)
     // Disease filter changes are handled by the dropdown's onChanged callback
     final cityChanged = oldWidget.selectedCity != widget.selectedCity;
+    final barangayChanged =
+        oldWidget.selectedBarangay != widget.selectedBarangay;
     final timeRangeChanged =
         oldWidget.selectedTimeRange != widget.selectedTimeRange;
 
-    if (cityChanged || timeRangeChanged) {
+    if (cityChanged || barangayChanged || timeRangeChanged) {
       _loadDiseaseLocations();
     }
+  }
+
+  bool _matchesSelectedLocation({
+    required String city,
+    required String barangay,
+  }) {
+    final cityMatches =
+        widget.selectedCity == 'All' ||
+        city.toLowerCase().trim() == widget.selectedCity.toLowerCase().trim();
+    final barangayMatches =
+        widget.selectedBarangay == 'All' ||
+        barangay.toLowerCase().trim() ==
+            widget.selectedBarangay.toLowerCase().trim();
+    return cityMatches && barangayMatches;
   }
 
   String _canonicalDiseaseKey(String raw) {
@@ -353,19 +371,13 @@ class _DiseaseMapWidgetState extends State<DiseaseMapWidget>
       // Get all scan requests
       final all = await ScanRequestsService.getScanRequests();
 
-      // Filter by city - be more strict with matching
-      var cityFiltered = all;
-      if (widget.selectedCity != 'All') {
-        final selectedCityLower = widget.selectedCity.toLowerCase().trim();
-        cityFiltered =
-            all.where((request) {
-              final city =
-                  (request['cityMunicipality'] ?? '').toString().trim();
-              final cityLower = city.toLowerCase();
-              // Exact match (case-insensitive)
-              return cityLower == selectedCityLower;
-            }).toList();
-      }
+      final cityFiltered =
+          all.where((request) {
+            final city =
+                (request['cityMunicipality'] ?? '').toString().trim();
+            final barangay = (request['barangay'] ?? '').toString().trim();
+            return _matchesSelectedLocation(city: city, barangay: barangay);
+          }).toList();
 
       // Filter by time range
       final filtered = ScanRequestsService.filterByTimeRange(
@@ -403,11 +415,8 @@ class _DiseaseMapWidgetState extends State<DiseaseMapWidget>
 
         if (province.isEmpty || city.isEmpty) continue;
 
-        // Double-check city filter FIRST (safety check)
-        if (widget.selectedCity != 'All') {
-          if (city.toLowerCase() != widget.selectedCity.toLowerCase()) {
-            continue; // Skip cities that don't match the filter
-          }
+        if (!_matchesSelectedLocation(city: city, barangay: barangay)) {
+          continue;
         }
 
         // Collect all disease labels present in this report
@@ -525,13 +534,12 @@ class _DiseaseMapWidgetState extends State<DiseaseMapWidget>
           }
         }
 
-        // If filtering by city, ensure city matches exactly
-        if (widget.selectedCity != 'All') {
-          if (locationAgg.city.toLowerCase().trim() !=
-              widget.selectedCity.toLowerCase().trim()) {
-            keysToRemove.add(entry.key);
-            continue;
-          }
+        if (!_matchesSelectedLocation(
+          city: locationAgg.city,
+          barangay: locationAgg.barangay,
+        )) {
+          keysToRemove.add(entry.key);
+          continue;
         }
       }
 
@@ -586,12 +594,8 @@ class _DiseaseMapWidgetState extends State<DiseaseMapWidget>
           }
         }
 
-        // Final safety check: only show markers for the selected city
-        if (widget.selectedCity != 'All') {
-          if (a.city.toLowerCase().trim() !=
-              widget.selectedCity.toLowerCase().trim()) {
-            continue; // Skip barangays from cities that don't match
-          }
+        if (!_matchesSelectedLocation(city: a.city, barangay: a.barangay)) {
+          continue;
         }
 
         final count = a.count;

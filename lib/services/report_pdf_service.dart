@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-// import 'package:flutter/services.dart' show rootBundle; // Commented out - template removed for now
+import 'package:flutter/services.dart' show rootBundle;
 import 'package:pdf/widgets.dart' as pw;
 import 'package:pdf/pdf.dart' as pdf;
 import 'package:printing/printing.dart';
@@ -16,6 +16,7 @@ class ReportPdfService {
     String? backgroundAsset,
     required String preparedBy,
     String selectedCity = 'All',
+    String selectedBarangay = 'All',
   }) async {
     // Fetch data needed for the report
     // Get all requests
@@ -27,6 +28,14 @@ class ReportPdfService {
           allRequests.where((request) {
             final city = (request['cityMunicipality'] ?? '').toString().trim();
             return city.toLowerCase() == selectedCity.toLowerCase();
+          }).toList();
+    }
+
+    if (selectedBarangay != 'All') {
+      allRequests =
+          allRequests.where((request) {
+            final barangay = (request['barangay'] ?? '').toString().trim();
+            return barangay.toLowerCase() == selectedBarangay.toLowerCase();
           }).toList();
     }
 
@@ -184,6 +193,9 @@ class ReportPdfService {
 
     // Build disease stats from validated data - count reports, not boxes
     final Map<String, int> diseaseCounts = {};
+    final Map<String, Map<String, int>> cityCountsByDisease = {};
+    final Map<String, Map<String, int>> barangayCountsByDisease = {};
+    final Map<String, int> healthyCityCounts = {};
     int healthyCount = 0;
     for (final r in filteredCreatedCompleted) {
       // ONLY use expert-validated disease summary (skip reports without expert validation)
@@ -228,13 +240,33 @@ class ReportPdfService {
         }
       }
 
+      final city = (r['cityMunicipality'] ?? '').toString().trim();
+      final barangay = (r['barangay'] ?? '').toString().trim();
+      final cityLabel = city.isEmpty ? 'Unspecified City/Municipality' : city;
+      final barangayLabel =
+          barangay.isEmpty
+              ? 'Unspecified Barangay'
+              : (city.isEmpty ? barangay : '$barangay ($city)');
+
       if (hasHealthy) {
         healthyCount++;
+        healthyCityCounts[cityLabel] = (healthyCityCounts[cityLabel] ?? 0) + 1;
       }
 
       // Count each disease type once per report
       for (final diseaseName in diseasesInReport) {
         diseaseCounts[diseaseName] = (diseaseCounts[diseaseName] ?? 0) + 1;
+        final diseaseCities = cityCountsByDisease.putIfAbsent(
+          diseaseName,
+          () => <String, int>{},
+        );
+        diseaseCities[cityLabel] = (diseaseCities[cityLabel] ?? 0) + 1;
+        final diseaseBarangays = barangayCountsByDisease.putIfAbsent(
+          diseaseName,
+          () => <String, int>{},
+        );
+        diseaseBarangays[barangayLabel] =
+            (diseaseBarangays[barangayLabel] ?? 0) + 1;
       }
     }
     final List<Map<String, dynamic>> diseaseStats = [];
@@ -314,6 +346,13 @@ class ReportPdfService {
         'percentage': pct,
         'type': 'disease',
         'trend': 'N/A',
+        'location': _buildPdfLocationLabel(
+          diseaseName: name,
+          selectedCity: selectedCity,
+          selectedBarangay: selectedBarangay,
+          cityCountsByDisease: cityCountsByDisease,
+          barangayCountsByDisease: barangayCountsByDisease,
+        ),
       });
     }
 
@@ -328,6 +367,11 @@ class ReportPdfService {
         'percentage': pct,
         'type': 'healthy',
         'trend': 'N/A',
+        'location': _buildHealthyPdfLocationLabel(
+          selectedCity: selectedCity,
+          selectedBarangay: selectedBarangay,
+          cityCounts: healthyCityCounts,
+        ),
       });
     }
     diseaseStats.sort(
@@ -494,32 +538,30 @@ class ReportPdfService {
     // Make charts compact but readable to fit executive summary and all content in 2 pages
     final double chartHeight = isSmall ? 70 : 85;
 
-    // PDF Template/Background - commented out for now (can be re-enabled later)
-    // If using a background template with embedded logos, we won't draw logos here
-    // final bool useBackground = backgroundAsset != null;
-    // final pw.ImageProvider? bgImage =
-    //     useBackground ? await _tryLoadLogo(backgroundAsset) : null;
+    final pw.ImageProvider? pageTemplate = await _tryLoadAssetImage(
+      backgroundAsset ?? 'assets/header_template.png',
+    );
 
     final pw.PageTheme pageTheme = pw.PageTheme(
       pageFormat: _resolvePageFormat(pageSize),
-      margin: pw.EdgeInsets.all(margin), // Simplified margin (no template)
-      // Template background code - commented out for now
-      // margin:
-      //     bgImage == null
-      //         ? pw.EdgeInsets.all(margin)
-      //         : pw.EdgeInsets.fromLTRB(
-      //           isSmall ? 14 : 28,
-      //           isSmall ? 110 : 140,
-      //           isSmall ? 14 : 28,
-      //           isSmall ? 80 : 100,
-      //         ),
-      // buildBackground: (context) {
-      //   if (bgImage == null) return pw.SizedBox();
-      //   return pw.FullPage(
-      //     ignoreMargins: true,
-      //     child: pw.Image(bgImage, fit: pw.BoxFit.cover),
-      //   );
-      // },
+      margin:
+          pageTemplate == null
+              ? pw.EdgeInsets.all(margin)
+              : pw.EdgeInsets.fromLTRB(
+                isSmall ? 18 : 32,
+                isSmall ? 110 : 138,
+                isSmall ? 18 : 32,
+                isSmall ? 54 : 68,
+              ),
+      buildBackground: (context) {
+        if (pageTemplate == null) {
+          return pw.SizedBox();
+        }
+        return pw.FullPage(
+          ignoreMargins: true,
+          child: pw.Image(pageTemplate, fit: pw.BoxFit.fill),
+        );
+      },
     );
 
     // Build disease multi-series using the full report disease catalog so zero-count
@@ -573,9 +615,11 @@ class ReportPdfService {
               pw.Divider(thickness: 0.7),
               _labeledRow(
                 'Location:',
-                selectedCity != 'All'
-                    ? '$selectedCity, Davao del Norte'
-                    : 'All Cities, Davao del Norte',
+                selectedBarangay != 'All'
+                    ? '$selectedBarangay, $selectedCity, Davao del Norte'
+                    : (selectedCity != 'All'
+                        ? '$selectedCity, Davao del Norte'
+                        : 'All Cities, Davao del Norte'),
                 baseBody * scale,
                 font: baseFont,
                 boldFont: boldFont,
@@ -626,6 +670,14 @@ class ReportPdfService {
               _buildStatsTable(
                 healthyOnlyStats,
                 firstColumnLabel: 'Category',
+                locationColumnLabel:
+                    selectedCity == 'All' && selectedBarangay == 'All'
+                        ? 'City or Municipality'
+                        : (selectedBarangay != 'All'
+                            ? 'Barangay'
+                            : (selectedCity != 'All'
+                                ? 'City or Municipality'
+                                : 'Location')),
                 maxRows: 4,
                 fontSize: baseTable * scale,
                 font: baseFont,
@@ -677,6 +729,12 @@ class ReportPdfService {
               _buildStatsTable(
                 diseaseOnlyStats,
                 firstColumnLabel: 'Disease',
+                locationColumnLabel:
+                    selectedBarangay != 'All'
+                        ? 'Barangay'
+                        : (selectedCity != 'All'
+                            ? 'Barangay'
+                            : 'City or Municipality'),
                 maxRows:
                     20, // Show all diseases (increased from tableRows to avoid grouping as "Others")
                 fontSize: baseTable * scale,
@@ -778,6 +836,8 @@ class ReportPdfService {
 
   static pw.Widget _buildDiseaseTable(
     List<Map<String, dynamic>> stats, {
+    String firstColumnLabel = 'Disease',
+    String locationColumnLabel = 'Location',
     int maxRows = 6,
     double fontSize = 10,
     pw.Font? font,
@@ -815,7 +875,7 @@ class ReportPdfService {
         children: [
           pw.Padding(
             padding: const pw.EdgeInsets.all(4),
-            child: pw.Text('Disease', style: headerStyle),
+            child: pw.Text(firstColumnLabel, style: headerStyle),
           ),
           pw.Padding(
             padding: const pw.EdgeInsets.all(4),
@@ -823,11 +883,11 @@ class ReportPdfService {
           ),
           pw.Padding(
             padding: const pw.EdgeInsets.all(4),
-            child: pw.Text('Percentage', style: headerStyle),
+            child: pw.Text(locationColumnLabel, style: headerStyle),
           ),
           pw.Padding(
             padding: const pw.EdgeInsets.all(4),
-            child: pw.Text('Trend', style: headerStyle),
+            child: pw.Text('Percentage', style: headerStyle),
           ),
           // Frequency column removed
         ],
@@ -837,8 +897,8 @@ class ReportPdfService {
     for (final d in top) {
       final name = (d['name'] ?? 'Unknown').toString();
       final count = (d['count'] ?? 0).toString();
+      final location = (d['location'] ?? 'N/A').toString();
       final pct = ((d['percentage'] ?? 0.0) * 100).toStringAsFixed(1) + '%';
-      final trend = (d['trend'] ?? 'N/A').toString();
       rows.add(
         pw.TableRow(
           children: [
@@ -852,11 +912,11 @@ class ReportPdfService {
             ),
             pw.Padding(
               padding: const pw.EdgeInsets.all(4),
-              child: pw.Text(pct, style: cellStyle),
+              child: pw.Text(location, style: cellStyle),
             ),
             pw.Padding(
               padding: const pw.EdgeInsets.all(4),
-              child: pw.Text(trend, style: cellStyle),
+              child: pw.Text(pct, style: cellStyle),
             ),
             // Frequency cell removed
           ],
@@ -874,6 +934,7 @@ class ReportPdfService {
             ),
             pw.SizedBox(),
             pw.SizedBox(),
+            pw.SizedBox(),
           ],
         ),
       );
@@ -887,6 +948,7 @@ class ReportPdfService {
   static pw.Widget _buildStatsTable(
     List<Map<String, dynamic>> stats, {
     String firstColumnLabel = 'Disease',
+    String locationColumnLabel = 'Location',
     int maxRows = 6,
     double fontSize = 10,
     pw.Font? font,
@@ -902,16 +964,72 @@ class ReportPdfService {
             'name': _titleCase(diseaseName), // Format for display
             'count': (e['count'] as num? ?? 0).toInt(),
             'percentage': (e['percentage'] as double? ?? 0.0),
-            'trend': (e['trend'] ?? 'N/A').toString(),
+            'location': (e['location'] ?? 'N/A').toString(),
           };
         }).toList();
     return _buildDiseaseTable(
       normalized,
+      firstColumnLabel: firstColumnLabel,
+      locationColumnLabel: locationColumnLabel,
       maxRows: maxRows,
       fontSize: fontSize,
       font: font,
       boldFont: boldFont,
     );
+  }
+
+  static String _buildPdfLocationLabel({
+    required String diseaseName,
+    required String selectedCity,
+    required String selectedBarangay,
+    required Map<String, Map<String, int>> cityCountsByDisease,
+    required Map<String, Map<String, int>> barangayCountsByDisease,
+  }) {
+    if (selectedBarangay != 'All') {
+      return selectedBarangay;
+    }
+
+    if (selectedCity != 'All') {
+      final barangays = barangayCountsByDisease[diseaseName] ?? const <String, int>{};
+      if (barangays.isEmpty) return selectedCity;
+      final topBarangay = _topLocationEntry(barangays);
+      return topBarangay ?? selectedCity;
+    }
+
+    final cities = cityCountsByDisease[diseaseName] ?? const <String, int>{};
+    if (cities.isEmpty) return 'All locations';
+    return _topLocationEntry(cities) ?? 'All locations';
+  }
+
+  static String _buildHealthyPdfLocationLabel({
+    required String selectedCity,
+    required String selectedBarangay,
+    required Map<String, int> cityCounts,
+  }) {
+    if (selectedBarangay != 'All') {
+      return selectedBarangay;
+    }
+
+    if (selectedCity != 'All') {
+      return selectedCity;
+    }
+
+    if (cityCounts.isEmpty) {
+      return 'All locations';
+    }
+
+    return _topLocationEntry(cityCounts) ?? 'All locations';
+  }
+
+  static String? _topLocationEntry(Map<String, int> counts) {
+    if (counts.isEmpty) return null;
+    final entries = counts.entries.toList()
+      ..sort((a, b) {
+        final countCompare = b.value.compareTo(a.value);
+        if (countCompare != 0) return countCompare;
+        return a.key.compareTo(b.key);
+      });
+    return entries.first.key;
   }
 
   // Removed old combined trend and response-time helpers
@@ -1322,15 +1440,18 @@ class ReportPdfService {
     return clean(base) + '.pdf';
   }
 
-  // PDF Template loading function - commented out for now (can be re-enabled later)
-  // static Future<pw.ImageProvider?> _tryLoadLogo(String assetPath) async {
-  //   try {
-  //     final bytes = await rootBundle.load(assetPath);
-  //     return pw.MemoryImage(bytes.buffer.asUint8List());
-  //   } catch (_) {
-  //     return null;
-  //   }
-  // }
+  static Future<pw.ImageProvider?> _tryLoadAssetImage(String assetPath) async {
+    try {
+      return await imageFromAssetBundle(assetPath);
+    } catch (_) {
+      try {
+        final bytes = await rootBundle.load(assetPath);
+        return pw.MemoryImage(bytes.buffer.asUint8List());
+      } catch (_) {
+        return null;
+      }
+    }
+  }
 
   static pw.Widget _labeledRow(
     String label,
